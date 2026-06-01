@@ -56,3 +56,6 @@ def run_task(args):
         return card.run(args.card)
 
 
+if __name__ == "__main__":
+    raise SystemExit(main())
+
