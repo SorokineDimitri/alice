@@ -1,0 +1,10 @@
+[project]
+name = "alice"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0,<3",
+    "requests>=2.32,<3",
+    "scikit-learn>=1.5,<2",
+    "spacy>=3.8,<4",
+]
