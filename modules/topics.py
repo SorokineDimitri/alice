@@ -1,159 +1,136 @@
-from __future__ import annotations
 
 from math import ceil
-from typing import Any
 
 from sklearn.decomposition import NMF
 
 from modules.cache import load_json, save_json
-from modules.nlp import vectorize
+from modules.nlp import lemmatize, vectorize
 from utils.path_config import cache_path, get_text
 
-MIN_SECTIONS = 4
-TARGET_TOKENS_PER_SECTION = 1500
-MIN_LAST_SECTION_TOKENS = 750
-TOPIC_COUNT = 5
-TOP_WORDS_PER_TOPIC = 12
-CANDIDATE_WORDS_PER_SECTION = 30
-CACHE_VERSION = 3
-REQUIRED_KEYS = {"version", "method", "topics", "sections", "candidate_count"}
-TOPIC_STOP_WORDS = {
-    "ll",
-    "don",
-    "ve",
-    "re",
-    "chapter",
-    "said",
-    "say",
-    "says",
-    "thought",
-    "think",
-    "know",
-    "like",
-    "went",
-}
+NB_THEMES = 5            # combien de themes on veut trouver
+MOTS_PAR_THEME = 10     # combien de mots on garde pour decrire chaque theme
+TAILLE_TRANCHE = 1500    # taille visee d'une tranche, en mots
+MIN_TRANCHES = 4         # au moins 4 tranches, sinon la NMF n'a pas assez a comparer
+MAX_RATIO = 0.8
+
+# Si on change la logique, on augmente ce numero : les vieux caches sont alors ignores.
+CACHE_VERSION = 5
+REQUIRED_KEYS = {"version", "method", "topics", "sections"}
 
 
-def _split_sections(text: str) -> list[str]:
-    analyzer = vectorize(stop_words=None).build_analyzer()
-    tokens = analyzer(text)
-    if not tokens:
+def decouper_en_tranches(texte):
+    mots = texte.split()
+    if not mots:
         return []
 
-    token_count = len(tokens)
-    section_count = max(MIN_SECTIONS, ceil(token_count / TARGET_TOKENS_PER_SECTION))
-    remainder = token_count % TARGET_TOKENS_PER_SECTION
-    if 0 < remainder < MIN_LAST_SECTION_TOKENS and section_count > MIN_SECTIONS:
-        section_count -= 1
-    section_size = ceil(len(tokens) / section_count)
-    return [
-        " ".join(tokens[start:start + section_size])
-        for start in range(0, len(tokens), section_size)
-    ]
+
+    nb_tranches = max(MIN_TRANCHES, len(mots) // TAILLE_TRANCHE)
+    taille = ceil(len(mots) / nb_tranches)
+
+    tranches = []
+    for debut in range(0, len(mots), taille):
+        tranche = " ".join(mots[debut:debut + taille])
+        tranches.append(tranche)
+    return tranches
 
 
-def _candidate_vocabulary(sections: list[str]) -> set[str]:
-    if not sections:
-        return set()
+def mots_les_plus_forts(poids, mots):
+    total = poids.sum()
 
-    vectorizer = vectorize(stop_words="english", extra_stop_words=TOPIC_STOP_WORDS)
-    matrix = vectorizer.fit_transform(sections)
-    terms = vectorizer.get_feature_names_out()
+    # argsort() trie les positions du plus PETIT au plus grand poids ;
+    # [::-1] inverse la liste pour avoir le plus GRAND en premier.
+    positions_triees = poids.argsort()[::-1]
 
-    candidates = set()
-    for row in matrix:
-        scores = row.toarray()[0]
-        for position in scores.argsort()[::-1][:CANDIDATE_WORDS_PER_SECTION]:
-            if scores[position] > 0:
-                candidates.add(terms[position])
-    return candidates
+    resultat = []
+    for position in positions_triees[:MOTS_PAR_THEME]:
+        if poids[position] <= 0:
+            continue  # un poids nul ne represente pas le theme
+        # On divise par le total pour que le score soit une part facile a lire.
+        score = float(poids[position] / total) if total else 0.0
+        resultat.append({"word": mots[position], "score": score})
+    return resultat
 
 
-def _fit_nmf(sections: list[str]) -> dict[str, Any]:
-    if not sections:
-        return {
-            "version": CACHE_VERSION,
-            "method": "nmf_tfidf",
-            "candidate_count": 0,
-            "topics": [],
-            "sections": [],
-        }
+def resultat_vide():
+    return {
+        "version": CACHE_VERSION,
+        "method": "nmf_tfidf",
+        "topics": [],
+        "sections": [],
+    }
 
-    candidates = _candidate_vocabulary(sections)
-    vectorizer = vectorize(
-        stop_words="english",
-        extra_stop_words=TOPIC_STOP_WORDS,
-    )
-    if candidates:
-        vectorizer.set_params(vocabulary=sorted(candidates))
 
-    matrix = vectorizer.fit_transform(sections)
-    terms = vectorizer.get_feature_names_out()
+def trouver_themes(texte):
+    tranches = decouper_en_tranches(texte)
+    if not tranches:
+        return resultat_vide()
 
-    topic_count = min(TOPIC_COUNT, matrix.shape[0], matrix.shape[1])
-    model = NMF(
-        n_components=topic_count,
+    # 1) Transformer le texte en chiffres (TF-IDF).
+    #    Chaque tranche devient une ligne de nombres ; un mot a un score eleve
+    #    s'il est frequent dans cette tranche mais rare dans les autres.
+    vectoriseur = vectorize(stop_words="english", max_df=MAX_RATIO)
+    matrice = vectoriseur.fit_transform(tranches)
+    mots = vectoriseur.get_feature_names_out()
+
+    # 2) NMF : regrouper les mots qui apparaissent souvent ensemble en themes.
+    #    On ne peut pas demander plus de themes que de tranches ou de mots.
+    nb_themes = min(NB_THEMES, matrice.shape[0], matrice.shape[1])
+    modele = NMF(
+        n_components=nb_themes,
         init="nndsvda",
-        random_state=42,
+        random_state=42,   # resultat toujours identique (stable et reproductible)
         max_iter=600,
     )
-    section_topics = model.fit_transform(matrix)
+    poids_tranches = modele.fit_transform(matrice)
 
-    topics = []
-    for topic_index, weights in enumerate(model.components_):
-        total = weights.sum()
-        scores = weights / total if total else weights
-        ranked = scores.argsort()[::-1]
-        words = [
-            {"word": terms[position], "score": float(scores[position])}
-            for position in ranked[:TOP_WORDS_PER_TOPIC]
-            if scores[position] > 0
-        ]
-        topics.append({
-            "topic": topic_index + 1,
-            "label": " / ".join(word["word"] for word in words[:3]),
-            "words": words,
+    # 3) Pour chaque theme, ses mots les plus representatifs.
+    themes = []
+    for numero, poids_du_theme in enumerate(modele.components_):
+        mots_du_theme = mots_les_plus_forts(poids_du_theme, mots)
+        label = " / ".join(m["word"] for m in mots_du_theme[:3])
+        themes.append({
+            "topic": numero + 1,
+            "label": label,
+            "words": mots_du_theme,
         })
 
-    section_results = []
-    for section_index, topic_weights in enumerate(section_topics):
-        total = topic_weights.sum()
-        distribution = topic_weights / total if total else topic_weights
-        dominant_index = int(distribution.argmax()) if len(distribution) else 0
-        section_results.append({
-            "section": section_index + 1,
-            "token_count": len(sections[section_index].split()),
-            "dominant_topic": dominant_index + 1,
-            "topic_distribution": [
-                {
-                    "topic": topic_index + 1,
-                    "score": float(score),
-                }
-                for topic_index, score in enumerate(distribution)
-            ],
+    # 4) Pour chaque tranche, quel theme domine.
+    sections = []
+    for numero, poids in enumerate(poids_tranches):
+        total = poids.sum()
+        repartition = []
+        for index_theme, valeur in enumerate(poids):
+            part = float(valeur / total) if total else 0.0
+            repartition.append({"topic": index_theme + 1, "score": part})
+
+        theme_dominant = int(poids.argmax()) + 1 if len(poids) else 1
+        sections.append({
+            "section": numero + 1,
+            "token_count": len(tranches[numero].split()),
+            "dominant_topic": theme_dominant,
+            "topic_distribution": repartition,
         })
 
     return {
         "version": CACHE_VERSION,
         "method": "nmf_tfidf",
-        "candidate_count": len(candidates),
-        "topics": topics,
-        "sections": section_results,
+        "topics": themes,
+        "sections": sections,
     }
 
 
-def _compute_topics(text: str) -> dict[str, Any]:
-    sections = _split_sections(text)
-    return _fit_nmf(sections)
-
-
-def run(book_id: int) -> dict[str, Any]:
+def run(book_id):
+    """Point d'entree : renvoie les themes du livre (depuis le cache si possible)."""
     path = cache_path(book_id, "topics")
+
+    # Deja calcule ? on renvoie le resultat sauvegarde.
     cached = load_json(path, REQUIRED_KEYS)
     if cached is not None:
         return cached
 
-    text = get_text(book_id)
-    topics = _compute_topics(text)
-    save_json(path, topics)
-    return topics
+    # Sinon : on recupere le texte, on simplifie les mots, on calcule, on sauve.
+    texte = get_text(book_id)
+    texte_simplifie = lemmatize(texte)
+    resultat = trouver_themes(texte_simplifie)
+    save_json(path, resultat)
+    return resultat
