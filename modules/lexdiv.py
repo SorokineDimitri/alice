@@ -1,49 +1,18 @@
 from __future__ import annotations
 
-import json
 from collections import Counter
-from pathlib import Path
-from typing import Any
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+from modules.cache import load_json, save_json
 from modules.gutenberg import download
-
-RAW_DIR = Path("data/raw")
-CACHE_DIR = Path("data/cache")
+from utils.path_config import cache_path, raw_path
 
 REQUIRED_KEYS = {"tok", "typ", "hap", "ttr", "mwl", "mwf"}
 
 
-def _raw_path(book_id: int) -> Path:
-    return RAW_DIR / f"{book_id}.txt"
-
-
-def _cache_path(book_id: int) -> Path:
-    return CACHE_DIR / f"{book_id}_lexdiv.json"
-
-
-def _load_cached(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    if not REQUIRED_KEYS.issubset(payload.keys()):
-        return None
-    return payload
-
-
-def _save_cache(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
 def _load_or_fetch_text(book_id: int) -> str:
-    path = _raw_path(book_id)
+    path = raw_path(book_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         return path.read_text(encoding="utf-8")
@@ -86,12 +55,12 @@ def _compute_metrics(text: str) -> dict[str, float | int]:
 
 
 def run(book_id: int) -> dict[str, float | int]:
-    cache_path = _cache_path(book_id)
-    cached = _load_cached(cache_path)
+    path = cache_path(book_id, "lexdiv")
+    cached = load_json(path, REQUIRED_KEYS)
     if cached is not None:
         return cached
 
     text = _load_or_fetch_text(book_id)
     metrics = _compute_metrics(text)
-    _save_cache(cache_path, metrics)
+    save_json(path, metrics)
     return metrics
