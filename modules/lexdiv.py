@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from collections import Counter
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 from modules.cache import load_json, save_json
+from modules.nlp import vectorize
 from utils.path_config import get_text
 from utils.path_config import cache_path
 
@@ -12,15 +11,7 @@ REQUIRED_KEYS = {"tok", "typ", "hap", "ttr", "mwl", "mwf"}
 
 
 def _compute_metrics(text: str) -> dict[str, float | int]:
-    vectorizer = TfidfVectorizer(
-        lowercase=True,
-        strip_accents="unicode",
-        stop_words=None,
-        token_pattern=r"(?u)\b[a-zA-Z][a-zA-Z']+\b",
-        norm="l2",
-        use_idf=True,
-        smooth_idf=True,
-    )
+    vectorizer = vectorize(stop_words=None)
     vectorizer.fit_transform([text])
     analyzer = vectorizer.build_analyzer()
     tokens = analyzer(text)
