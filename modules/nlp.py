@@ -22,15 +22,18 @@ def vectorize(
     )
 
 
-@functools.lru_cache(maxsize=1)
-def _nlp():
+def load_spacy(disable=()):
+    return _load_spacy(tuple(disable))
+
+
+@functools.lru_cache(maxsize=None)
+def _load_spacy(disable: tuple[str, ...]):
     import spacy
 
-    # parser et ner inutiles ici : pipeline plus leger, on garde tagger+lemmatizer.
-    return spacy.load("en_core_web_sm", disable=["parser", "ner"])
+    return spacy.load("en_core_web_sm", disable=list(disable))
 
 
-def _spacy_chunks(text: str):
+def spacy_chunks(text: str):
     for start in range(0, len(text), SPACY_MAX_LEN):
         yield text[start:start + SPACY_MAX_LEN]
 
@@ -41,9 +44,10 @@ def lemmatize(text: str, keep_pos: set[str]) -> str:
     spaCy gere les contractions (don't -> do/not) et la flexion (came -> come),
     ce qui supprime le besoin de listes de stop words bricolees a la main.
     """
-    nlp = _nlp()
+    # parser et ner inutiles ici : pipeline plus leger, on garde tagger+lemmatizer.
+    nlp = load_spacy(disable=("parser", "ner"))
     lemmas: list[str] = []
-    for chunk in _spacy_chunks(text):  # un livre peut depasser la limite spaCy
+    for chunk in spacy_chunks(text):  # un livre peut depasser la limite spaCy
         for token in nlp(chunk):
             if token.is_stop or token.is_punct or token.is_space:
                 continue
