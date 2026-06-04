@@ -1,41 +1,19 @@
 from __future__ import annotations
-
 import functools
-
-from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
-from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 TOKEN_PATTERN = r"(?u)\b[a-zA-Z][a-zA-Z']+\b"
-
-# On ne garde que les natures de mots porteuses de sens.
-KEEP_POS = {"NOUN", "PROPN", "ADJ", "VERB"}
 SPACY_MAX_LEN = 1_000_000  # limite de caracteres par appel spaCy
-
-
-def _stop_words(stop_words: str | None = None, extra_stop_words: set[str] | None = None) -> list[str] | None:
-    if stop_words == "english":
-        words = set(ENGLISH_STOP_WORDS)
-    elif stop_words is None:
-        words = None
-    else:
-        words = set(stop_words)
-
-    if extra_stop_words:
-        words = (words or set()) | extra_stop_words
-
-    return sorted(words) if words is not None else None
 
 
 def vectorize(
     stop_words: str | None = None,
-    extra_stop_words: set[str] | None = None,
     max_df: float = 1.0,
 ) -> TfidfVectorizer:
     return TfidfVectorizer(
         lowercase=True,
         strip_accents="unicode",
-        stop_words=_stop_words(stop_words, extra_stop_words),
+        stop_words=stop_words,
         token_pattern=TOKEN_PATTERN,
         max_df=max_df,
         norm="l2",
@@ -57,7 +35,7 @@ def _spacy_chunks(text: str):
         yield text[start:start + SPACY_MAX_LEN]
 
 
-def lemmatize(text: str) -> str:
+def lemmatize(text: str, keep_pos: set[str]) -> str:
     """Reduit le texte a ses lemmes porteurs de sens (noms, adjectifs, verbes).
 
     spaCy gere les contractions (don't -> do/not) et la flexion (came -> come),
@@ -69,21 +47,7 @@ def lemmatize(text: str) -> str:
         for token in nlp(chunk):
             if token.is_stop or token.is_punct or token.is_space:
                 continue
-            if not token.is_alpha or token.pos_ not in KEEP_POS:
+            if not token.is_alpha or token.pos_ not in keep_pos:
                 continue
             lemmas.append(token.lemma_.lower())
     return " ".join(lemmas)
-
-
-def count_vectorize(
-    stop_words: str | None = None,
-    extra_stop_words: set[str] | None = None,
-    max_df: float = 1.0,
-) -> CountVectorizer:
-    return CountVectorizer(
-        lowercase=True,
-        strip_accents="unicode",
-        stop_words=_stop_words(stop_words, extra_stop_words),
-        token_pattern=TOKEN_PATTERN,
-        max_df=max_df,
-    )
