@@ -1,14 +1,21 @@
+from __future__ import annotations
+
+import functools
 import re
-from math import ceil
-from sklearn.decomposition import NMF
+from pathlib import Path
+
+from empath import Empath
+
 from modules.cache import load_json, save_json
-from modules.nlp import lemmatize, vectorize
+from modules.nlp import lemmatize, load_spacy, vectorize
 from utils.path_config import cache_path, get_text
 
-TOPIC_POS = {"NOUN", "PROPN", "ADJ"}
-TOPIC_COUNT = 4            # combien de themes on veut trouver
+THEME_POS = {"NOUN", "PROPN", "ADJ", "VERB"}
+TOPIC_WORD_POS = {"NOUN", "PROPN"}
+REFERENCE_POS = THEME_POS
 WORDS_PER_TOPIC = 10     # combien de mots on garde pour decrire chaque theme
-MAX_DF = 0.8         # word frequency in the document
+FALLBACK_SECTION_TOKENS = 1500
+MAX_SECTION_DF = 0.75
 
 EXPLICIT_HEADING = re.compile(
     r"^\s*(CHAPTER|PART|SECTION)\s+([IVXLCDM]+|\d+)\.?\b.*$",
@@ -17,30 +24,17 @@ EXPLICIT_HEADING = re.compile(
 ROMAN_HEADING = re.compile(r"^\s*[IVXLCDM]+\.\s*$")
 
 
-def split_equal_sections(text):
-    words = text.split()
-    if not words:
-        return []
-
-    section_size = ceil(len(words) / TOPIC_COUNT)
-    sections = []
-    for start in range(0, len(words), section_size):
-        section = " ".join(words[start:start + section_size])
-        sections.append(section)
-    return sections
+def split_chunks(words: list[str], chunk_size: int) -> list[str]:
+    return [
+        " ".join(words[start:start + chunk_size])
+        for start in range(0, len(words), chunk_size)
+    ]
 
 
-def split_from_headings(text, pattern):
+def split_from_headings(text: str, pattern: re.Pattern[str]) -> list[str]:
     lines = text.splitlines()
     starts = [index for index, line in enumerate(lines) if pattern.match(line)]
-    starts = [
-        start for position, start in enumerate(starts)
-        if not (
-            (position > 0 and start == starts[position - 1] + 1)
-            or (position + 1 < len(starts) and starts[position + 1] == start + 1)
-        )
-    ]
-    if len(starts) < TOPIC_COUNT:
+    if len(starts) < 2:
         return []
 
     sections = []
@@ -52,65 +46,154 @@ def split_from_headings(text, pattern):
     return sections
 
 
-def split_sections(text):
+def author_sections(text: str) -> list[str]:
     for pattern in (EXPLICIT_HEADING, ROMAN_HEADING):
         sections = split_from_headings(text, pattern)
-        if len(sections) >= TOPIC_COUNT:
+        if sections:
             return sections
-    return split_equal_sections(text)
+    return []
 
 
-def strongest_words(weights, words):
-    # argsort() trie les positions du plus PETIT au plus grand poids ;
-    # [::-1] inverse la liste pour avoir le plus GRAND en premier.
-    sorted_positions = weights.argsort()[::-1]
+def lemmatized_sections(text: str, keep_pos: set[str]) -> list[str]:
+    sections = author_sections(text)
+    if sections:
+        return [
+            section
+            for section in (lemmatize(section, keep_pos=keep_pos) for section in sections)
+            if section
+        ]
 
-    result = []
-    for position in sorted_positions[:WORDS_PER_TOPIC]:
-        if weights[position] <= 0:
-            continue  # un poids nul ne represente pas le theme
-        result.append(words[position])
+    lemmas = lemmatize(text, keep_pos=keep_pos).split()
+    return split_chunks(lemmas, FALLBACK_SECTION_TOKENS)
+
+
+@functools.lru_cache(maxsize=1)
+def empath() -> Empath:
+    return Empath()
+
+
+def reference_words(words: list[str]) -> set[str]:
+    nlp = load_spacy(disable=("parser", "ner"))
+    references = set()
+
+    for doc in nlp.pipe(word.replace("_", " ") for word in words):
+        for token in doc:
+            if token.is_stop or not token.is_alpha or token.pos_ not in REFERENCE_POS:
+                continue
+            references.add(token.lemma_.lower())
+    return references
+
+
+@functools.lru_cache(maxsize=1)
+def empath_categories() -> dict[str, set[str]]:
+    lexicon = empath()
+    return {
+        category: reference_words(words)
+        for category, words in lexicon.cats.items()
+    }
+
+
+@functools.lru_cache(maxsize=1)
+def word_categories() -> dict[str, set[str]]:
+    categories_by_word: dict[str, set[str]] = {}
+    for category, words in empath_categories().items():
+        for word in words:
+            categories_by_word.setdefault(word, set()).add(category)
+    return categories_by_word
+
+
+def weighted_words(row, words) -> list[tuple[str, float]]:
+    weights = row.toarray()[0]
+    positions = weights.argsort()[::-1]
+    return [
+        (words[position], float(weights[position]))
+        for position in positions
+        if weights[position] > 0
+    ]
+
+
+def section_theme(words: list[tuple[str, float]]) -> str:
+    scores: dict[str, float] = {}
+    categories_by_word = word_categories()
+
+    for word, weight in words:
+        for category in categories_by_word.get(word, ()):
+            scores[category] = scores.get(category, 0.0) + weight
+
+    if not scores:
+        return "general"
+    return max(scores, key=scores.get)
+
+
+def noun_topic_words(words: list[tuple[str, float]]) -> set[str]:
+    nlp = load_spacy(disable=("parser", "ner"))
+    result = set()
+
+    for doc in nlp.pipe(word for word, _ in words):
+        for token in doc:
+            if token.is_alpha and token.pos_ in TOPIC_WORD_POS:
+                result.add(token.lemma_.lower())
     return result
 
 
-def empty_result():
-    return {number: [] for number in range(1, TOPIC_COUNT + 1)}
+def topic_words(words: list[tuple[str, float]], theme: str) -> list[str]:
+    theme_words = empath_categories().get(theme, set())
+    noun_words = noun_topic_words(words)
+    selected = [
+        word for word, _ in words
+        if word in theme_words and word in noun_words
+    ]
+
+    if len(selected) < WORDS_PER_TOPIC:
+        selected_words = set(selected)
+        selected.extend(
+            word for word, _ in words
+            if word not in selected_words and word in noun_words
+        )
+
+    return selected[:WORDS_PER_TOPIC]
 
 
-def find_topics(text):
-    sections = [lemmatize(section, keep_pos=TOPIC_POS) for section in split_sections(text)]
-    if not sections:
-        return empty_result()
+def max_df_for_sections(sections: list[str]) -> float:
+    if len(sections) < 2:
+        return 1.0
+    return MAX_SECTION_DF
 
-    # 1) Transformer le texte en chiffres (TF-IDF).
-    #    Chaque tranche devient une ligne de nombres ; un mot a un score eleve
-    #    s'il est frequent dans cette tranche mais rare dans les autres.
-    vectorizer = vectorize(
+
+def find_topics(text: str) -> dict[str, dict[str, list[str] | str]]:
+    theme_sections = lemmatized_sections(text, keep_pos=THEME_POS)
+    if not theme_sections:
+        return {}
+
+    theme_vectorizer = vectorize(
         stop_words="english",
-        max_df=MAX_DF,
+        max_df=max_df_for_sections(theme_sections),
     )
-    matrix = vectorizer.fit_transform(sections)
-    words = vectorizer.get_feature_names_out()
+    theme_matrix = theme_vectorizer.fit_transform(theme_sections)
+    theme_words = theme_vectorizer.get_feature_names_out()
 
-    # 2) NMF : regrouper les mots qui apparaissent souvent ensemble en themes.
-    #    On ne peut pas demander plus de themes que de tranches ou de mots.
-    topic_count = min(TOPIC_COUNT, matrix.shape[0], matrix.shape[1])
-    model = NMF(
-        n_components=topic_count,
-        init="nndsvda",
-        random_state=42,   # resultat toujours identique (stable et reproductible)
-        max_iter=600,
-    )
-    model.fit_transform(matrix)
-
-    # 3) Pour chaque theme, ses mots les plus representatifs.
     topics = {}
-    for number, topic_weights in enumerate(model.components_):
-        topic_words = strongest_words(topic_weights, words)
-        topics[number + 1] = topic_words
-    for number in range(1, TOPIC_COUNT + 1):
-        topics.setdefault(number, [])
+    for index, theme_row in enumerate(theme_matrix, start=1):
+        ranked_theme_words = weighted_words(theme_row, theme_words)
+        theme = section_theme(ranked_theme_words)
+        topics[str(index)] = {
+            "theme": theme,
+            "words": topic_words(ranked_theme_words, theme),
+        }
     return topics
+
+
+def valid_cached_topics(payload) -> bool:
+    return all(
+        isinstance(topic, dict)
+        and isinstance(topic.get("theme"), str)
+        and isinstance(topic.get("words"), list)
+        for topic in payload.values()
+    )
+
+
+def cache_is_current(path) -> bool:
+    return path.stat().st_mtime >= Path(__file__).stat().st_mtime
 
 
 def run(book_id):
@@ -118,7 +201,7 @@ def run(book_id):
     path = cache_path(book_id, "topics")
 
     cached = load_json(path)
-    if cached is not None:
+    if cached is not None and cache_is_current(path) and valid_cached_topics(cached):
         return cached
 
     text = get_text(book_id)
