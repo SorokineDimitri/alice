@@ -16,12 +16,14 @@ REFERENCE_POS = THEME_POS
 WORDS_PER_TOPIC = 10     # combien de mots on garde pour decrire chaque theme
 FALLBACK_SECTION_TOKENS = 1500
 MAX_SECTION_DF = 0.75
+MIN_SECTION_WORDS = 80
 
 EXPLICIT_HEADING = re.compile(
     r"^\s*(CHAPTER|PART|SECTION)\s+([IVXLCDM]+|\d+)\.?\b.*$",
     re.IGNORECASE,
 )
 ROMAN_HEADING = re.compile(r"^\s*[IVXLCDM]+\.\s*$")
+WORD = re.compile(r"[A-Za-z]+")
 
 
 def split_chunks(words: list[str], chunk_size: int) -> list[str]:
@@ -41,7 +43,7 @@ def split_from_headings(text: str, pattern: re.Pattern[str]) -> list[str]:
     for position, start in enumerate(starts):
         end = starts[position + 1] if position + 1 < len(starts) else len(lines)
         section = "\n".join(lines[start + 1:end]).strip()
-        if section:
+        if len(WORD.findall(section)) >= MIN_SECTION_WORDS:
             sections.append(section)
     return sections
 
