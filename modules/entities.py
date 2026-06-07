@@ -7,6 +7,7 @@ from modules.nlp import load_spacy, spacy_chunks
 from utils.path_config import cache_path, get_text
 
 CONTEXT_WINDOW = 4
+ENTITY_LIMIT = 20
 ACTION_POS = {"VERB", "AUX"}
 CHARACTER_DEPS = {"nsubj", "dobj", "pobj", "attr", "appos", "conj"}
 INVALID_ENTITY_STARTS = {"a", "an", "the", "this", "that", "these", "those"}
@@ -290,12 +291,15 @@ def find_entities(text: str) -> dict[str, list[str]]:
         for location in possessive_locations(doc, location_nouns):
             counters["locations"][location] += 2
 
-    characters = [name for name, _ in counters["characters"].most_common()]
-    character_names = set(characters)
+    ranked_characters = [
+        name for name, _ in counters["characters"].most_common()
+    ]
+    character_names = set(ranked_characters)
+    characters = ranked_characters[:ENTITY_LIMIT]
     locations = [
         name for name, _ in counters["locations"].most_common()
         if name not in character_names
-    ]
+    ][:ENTITY_LIMIT]
 
     return {
         "characters": characters,
@@ -303,11 +307,23 @@ def find_entities(text: str) -> dict[str, list[str]]:
     }
 
 
+def valid_cached_entities(payload) -> bool:
+    return (
+        isinstance(payload, dict)
+        and isinstance(payload.get("characters"), list)
+        and isinstance(payload.get("locations"), list)
+        and len(payload["characters"]) <= ENTITY_LIMIT
+        and len(payload["locations"]) <= ENTITY_LIMIT
+        and all(isinstance(name, str) for name in payload["characters"])
+        and all(isinstance(name, str) for name in payload["locations"])
+    )
+
+
 def run(book_id):
     path = cache_path(book_id, "entities")
 
     cached = load_json(path)
-    if cached is not None:
+    if cached is not None and valid_cached_entities(cached):
         return cached
 
     result = find_entities(get_text(book_id))
