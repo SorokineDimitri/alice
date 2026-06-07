@@ -8,3 +8,4 @@ data/raw/*
 !data/raw/.gitkeep
 data/cache/*
 !data/cache/.gitkeep
+docs/
