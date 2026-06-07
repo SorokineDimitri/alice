@@ -1,22 +1,20 @@
 from __future__ import annotations
 
 import functools
+import json
 import re
 from pathlib import Path
 
-from empath import Empath
-
 from modules.cache import load_json, save_json
-from modules.nlp import lemmatize, load_spacy, vectorize
+from modules.nlp import lemmatize, vectorize
 from utils.path_config import cache_path, get_text
 
 THEME_POS = {"NOUN", "PROPN", "ADJ", "VERB"}
-TOPIC_WORD_POS = {"NOUN", "PROPN"}
-REFERENCE_POS = THEME_POS
 WORDS_PER_TOPIC = 10     # combien de mots on garde pour decrire chaque theme
 FALLBACK_SECTION_TOKENS = 1500
-MAX_SECTION_DF = 0.75
+MAX_SECTION_DF = 0.3
 MIN_SECTION_WORDS = 80
+THEMES_PATH = Path(__file__).resolve().parent.parent / "data" / "literary_themes.json"
 
 EXPLICIT_HEADING = re.compile(
     r"^\s*(CHAPTER|PART|SECTION)\s+([IVXLCDM]+|\d+)\.?\b.*$",
@@ -24,6 +22,7 @@ EXPLICIT_HEADING = re.compile(
 )
 ROMAN_HEADING = re.compile(r"^\s*[IVXLCDM]+\.\s*$")
 WORD = re.compile(r"[A-Za-z]+")
+TOPIC_KEY = re.compile(r"^\d+: .+$")
 
 
 def split_chunks(words: list[str], chunk_size: int) -> list[str]:
@@ -70,38 +69,17 @@ def lemmatized_sections(text: str, keep_pos: set[str]) -> list[str]:
 
 
 @functools.lru_cache(maxsize=1)
-def empath() -> Empath:
-    return Empath()
-
-
-def reference_words(words: list[str]) -> set[str]:
-    nlp = load_spacy(disable=("parser", "ner"))
-    references = set()
-
-    for doc in nlp.pipe(word.replace("_", " ") for word in words):
-        for token in doc:
-            if token.is_stop or not token.is_alpha or token.pos_ not in REFERENCE_POS:
-                continue
-            references.add(token.lemma_.lower())
-    return references
-
-
-@functools.lru_cache(maxsize=1)
-def empath_categories() -> dict[str, set[str]]:
-    lexicon = empath()
+def theme_dictionary() -> dict[str, set[str]]:
+    payload = json.loads(THEMES_PATH.read_text(encoding="utf-8"))
     return {
-        category: reference_words(words)
-        for category, words in lexicon.cats.items()
+        theme: {
+            word.lower()
+            for word in words
+            if isinstance(word, str) and word.isalpha()
+        }
+        for theme, words in payload.items()
+        if isinstance(theme, str) and isinstance(words, list)
     }
-
-
-@functools.lru_cache(maxsize=1)
-def word_categories() -> dict[str, set[str]]:
-    categories_by_word: dict[str, set[str]] = {}
-    for category, words in empath_categories().items():
-        for word in words:
-            categories_by_word.setdefault(word, set()).add(category)
-    return categories_by_word
 
 
 def weighted_words(row, words) -> list[tuple[str, float]]:
@@ -114,43 +92,37 @@ def weighted_words(row, words) -> list[tuple[str, float]]:
     ]
 
 
-def section_theme(words: list[tuple[str, float]]) -> str:
-    scores: dict[str, float] = {}
-    categories_by_word = word_categories()
+def theme_score(words: list[tuple[str, float]], theme_words: set[str]) -> float:
+    return sum(weight for word, weight in words if word in theme_words)
 
-    for word, weight in words:
-        for category in categories_by_word.get(word, ()):
-            scores[category] = scores.get(category, 0.0) + weight
 
-    if not scores:
+def best_theme(words: list[tuple[str, float]]) -> str:
+    themes = theme_dictionary()
+    if not themes:
         return "general"
-    return max(scores, key=scores.get)
 
-
-def noun_topic_words(words: list[tuple[str, float]]) -> set[str]:
-    nlp = load_spacy(disable=("parser", "ner"))
-    result = set()
-
-    for doc in nlp.pipe(word for word, _ in words):
-        for token in doc:
-            if token.is_alpha and token.pos_ in TOPIC_WORD_POS:
-                result.add(token.lemma_.lower())
-    return result
+    theme, score = max(
+        (
+            (theme, theme_score(words, theme_words))
+            for theme, theme_words in themes.items()
+        ),
+        key=lambda item: item[1],
+    )
+    return theme if score > 0 else "general"
 
 
 def topic_words(words: list[tuple[str, float]], theme: str) -> list[str]:
-    theme_words = empath_categories().get(theme, set())
-    noun_words = noun_topic_words(words)
+    theme_words = theme_dictionary().get(theme, set())
     selected = [
         word for word, _ in words
-        if word in theme_words and word in noun_words
+        if word in theme_words
     ]
 
     if len(selected) < WORDS_PER_TOPIC:
         selected_words = set(selected)
         selected.extend(
             word for word, _ in words
-            if word not in selected_words and word in noun_words
+            if word not in selected_words
         )
 
     return selected[:WORDS_PER_TOPIC]
@@ -162,40 +134,49 @@ def max_df_for_sections(sections: list[str]) -> float:
     return MAX_SECTION_DF
 
 
-def find_topics(text: str) -> dict[str, dict[str, list[str] | str]]:
-    theme_sections = lemmatized_sections(text, keep_pos=THEME_POS)
-    if not theme_sections:
+def topic_key(index: int, theme: str) -> str:
+    return f"{index}: {theme}"
+
+
+def find_topics(text: str) -> dict[str, list[str]]:
+    sections = lemmatized_sections(text, keep_pos=THEME_POS)
+    if not sections:
         return {}
 
     theme_vectorizer = vectorize(
         stop_words="english",
-        max_df=max_df_for_sections(theme_sections),
+        max_df=max_df_for_sections(sections),
     )
-    theme_matrix = theme_vectorizer.fit_transform(theme_sections)
-    theme_words = theme_vectorizer.get_feature_names_out()
+    theme_matrix = theme_vectorizer.fit_transform(sections)
+    words = theme_vectorizer.get_feature_names_out()
 
     topics = {}
-    for index, theme_row in enumerate(theme_matrix, start=1):
-        ranked_theme_words = weighted_words(theme_row, theme_words)
-        theme = section_theme(ranked_theme_words)
-        topics[str(index)] = {
-            "theme": theme,
-            "words": topic_words(ranked_theme_words, theme),
-        }
+    for index, row in enumerate(theme_matrix, start=1):
+        ranked_words = weighted_words(row, words)
+        theme = best_theme(ranked_words)
+        topics[topic_key(index, theme)] = topic_words(ranked_words, theme)
     return topics
 
 
 def valid_cached_topics(payload) -> bool:
-    return all(
-        isinstance(topic, dict)
-        and isinstance(topic.get("theme"), str)
-        and isinstance(topic.get("words"), list)
-        for topic in payload.values()
+    return (
+        isinstance(payload, dict)
+        and all(
+            isinstance(section, str)
+            and bool(TOPIC_KEY.match(section))
+            and isinstance(topic, list)
+            and len(topic) == WORDS_PER_TOPIC
+            and all(isinstance(word, str) for word in topic)
+            for section, topic in payload.items()
+        )
     )
 
 
 def cache_is_current(path) -> bool:
-    return path.stat().st_mtime >= Path(__file__).stat().st_mtime
+    return path.stat().st_mtime >= max(
+        Path(__file__).stat().st_mtime,
+        THEMES_PATH.stat().st_mtime,
+    )
 
 
 def run(book_id):
