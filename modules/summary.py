@@ -12,10 +12,10 @@ from modules.cache import load_json, save_json
 from modules.nlp import load_spacy, spacy_chunks, vectorize
 from utils.path_config import cache_path, get_text
 
-SUMMARY_SENTENCES = 5      # nombre de phrases dans le resume final
+SUMMARY_SENTENCES = 7      # nombre de phrases dans le resume final
 MIN_SENTENCE_WORDS = 12    # on ignore les phrases courtes (repliques type "said Alice")
 MAX_SENTENCES = 4000       # plafond pour borner la memoire/temps sur les gros livres
-QUOTE_FRACTION_MAX = 0.35  # au-dela, la phrase est surtout du dialogue -> ecartee
+QUOTE_FRACTION_MAX = 0.20  # au-dela, la phrase est surtout du dialogue -> ecartee
 MAX_DF = 0.3               # ignore les mots ultra-frequents ("said", noms de persos)
 DAMPING = 0.85             # facteur d'amortissement de PageRank
 ITERATIONS = 50            # nombre d'iterations de PageRank

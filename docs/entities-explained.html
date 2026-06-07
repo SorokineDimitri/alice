@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>entities.py — guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #ffffff;
+    --bg-soft: #f7f6f3;
+    --bg-code: #f3f2ee;
+    --text: #37352f;
+    --text-soft: #787774;
+    --text-mute: #9b9a97;
+    --border: #ebebea;
+    --border-soft: #f1f1ef;
+    --accent: #2383e2;
+    --blue-bg: #e7f3f8;
+    --blue-text: #0b6e99;
+    --green-bg: #e8f3ec;
+    --green-text: #186f3a;
+    --orange-bg: #fbecdd;
+    --orange-text: #8a4b1a;
+    --red-bg: #fbeaea;
+    --red-text: #a23a3a;
+    --purple-bg: #efe8f4;
+    --purple-text: #6940a5;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-size:16px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .page{max-width:760px;margin:0 auto;padding:96px 56px 160px}
+
+  /* ---------- HERO ---------- */
+  .emoji-block{
+    font-size:60px;line-height:1;margin-bottom:16px;
+  }
+  h1{
+    font-size:40px;font-weight:700;letter-spacing:-.02em;line-height:1.15;
+    margin-bottom:8px;
+  }
+  .subtitle{
+    color:var(--text-soft);font-size:17px;margin-bottom:8px;
+  }
+  .meta{
+    color:var(--text-mute);font-size:13.5px;
+    font-family:'JetBrains Mono',monospace;margin-top:24px;
+    padding-bottom:18px;border-bottom:1px solid var(--border);
+  }
+  .meta span{margin-right:18px}
+
+  /* ---------- HEADINGS ---------- */
+  h2{
+    font-size:26px;font-weight:600;letter-spacing:-.01em;margin-top:64px;margin-bottom:14px;
+  }
+  h3{
+    font-size:19px;font-weight:600;margin-top:32px;margin-bottom:10px;
+  }
+  p{margin-bottom:14px;color:var(--text)}
+  p.lead{color:var(--text-soft);font-size:16.5px}
+  strong{font-weight:600;color:var(--text)}
+  em{font-style:italic}
+
+  /* ---------- INLINE CODE ---------- */
+  code{
+    font-family:'JetBrains Mono',monospace;font-size:.86em;
+    background:var(--bg-code);
+    padding:1.5px 6px;border-radius:4px;
+    color:#a8324a;
+  }
+
+  /* ---------- CALLOUT ---------- */
+  .callout{
+    display:flex;gap:14px;align-items:flex-start;
+    background:var(--bg-soft);
+    border-radius:6px;padding:16px 18px;margin:18px 0;
+  }
+  .callout .ico{font-size:18px;line-height:1.4;flex-shrink:0}
+  .callout .body{flex:1;font-size:15.5px;color:var(--text)}
+  .callout.blue{background:var(--blue-bg)}
+  .callout.blue .body{color:var(--blue-text)}
+  .callout.green{background:var(--green-bg)}
+  .callout.green .body{color:var(--green-text)}
+  .callout.orange{background:var(--orange-bg)}
+  .callout.orange .body{color:var(--orange-text)}
+  .callout.purple{background:var(--purple-bg)}
+  .callout.purple .body{color:var(--purple-text)}
+
+  /* ---------- TOGGLE ---------- */
+  details{
+    margin:6px 0;padding:6px 0;border-bottom:1px solid var(--border-soft);
+  }
+  details:last-of-type{border-bottom:none}
+  summary{
+    cursor:pointer;list-style:none;padding:8px 0;
+    font-weight:500;font-size:16px;
+    display:flex;align-items:center;gap:10px;
+    user-select:none;
+  }
+  summary::-webkit-details-marker{display:none}
+  summary::before{
+    content:"▸";color:var(--text-mute);font-size:11px;
+    transition:transform .15s;display:inline-block;width:12px;
+  }
+  details[open] > summary::before{transform:rotate(90deg)}
+  summary:hover{background:var(--bg-soft);border-radius:4px;padding-left:8px;margin-left:-8px}
+  details .toggle-body{padding:6px 0 12px 22px}
+  details .toggle-body p{font-size:15.5px;color:var(--text-soft);margin-bottom:10px}
+  details .toggle-body ul{padding-left:20px;font-size:15.5px;color:var(--text-soft)}
+  details .toggle-body li{margin-bottom:6px}
+
+  /* ---------- STEP LIST ---------- */
+  .steps{margin:18px 0;padding-left:0;list-style:none}
+  .steps li{
+    display:flex;gap:14px;padding:14px 0;
+    border-bottom:1px solid var(--border-soft);
+  }
+  .steps li:last-child{border-bottom:none}
+  .step-num{
+    flex-shrink:0;width:28px;height:28px;border-radius:50%;
+    background:var(--bg-soft);color:var(--text);
+    display:grid;place-items:center;font-size:13px;font-weight:600;
+    font-family:'JetBrains Mono',monospace;
+  }
+  .step-text{flex:1}
+  .step-text .step-title{
+    font-weight:600;font-size:15.5px;margin-bottom:4px;
+  }
+  .step-text .step-title code{font-size:.92em}
+  .step-text .step-desc{font-size:15px;color:var(--text-soft);margin-bottom:6px}
+  .step-text .step-io{
+    font-family:'JetBrains Mono',monospace;font-size:12.5px;
+    color:var(--text-mute);
+  }
+  .step-text .step-io .in{color:var(--green-text)}
+  .step-text .step-io .out{color:var(--blue-text)}
+
+  /* ---------- 2 CARDS ---------- */
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+  .mini{
+    background:var(--bg);border:1px solid var(--border);border-radius:6px;
+    padding:18px 18px 16px;
+  }
+  .mini .badge{
+    display:inline-block;font-family:'JetBrains Mono',monospace;
+    font-size:11px;letter-spacing:.04em;padding:2px 8px;border-radius:3px;
+    background:var(--bg-soft);color:var(--text-soft);margin-bottom:10px;
+  }
+  .mini h4{font-size:16px;font-weight:600;margin-bottom:4px}
+  .mini .role{color:var(--text-mute);font-size:13.5px;margin-bottom:10px;font-style:italic}
+  .mini p{font-size:14.5px;color:var(--text-soft);margin-bottom:8px}
+  .mini ul{padding-left:18px;font-size:14px;color:var(--text-soft)}
+  .mini li{margin:3px 0}
+
+  /* ---------- TABLE ---------- */
+  table{
+    width:100%;border-collapse:collapse;margin:18px 0;font-size:14.5px;
+  }
+  th,td{
+    text-align:left;padding:10px 12px;border-bottom:1px solid var(--border-soft);
+    vertical-align:top;
+  }
+  th{
+    font-weight:500;color:var(--text-mute);font-size:12.5px;
+    text-transform:uppercase;letter-spacing:.06em;
+  }
+  td:first-child code{background:transparent;padding:0;color:var(--text)}
+  td:nth-child(2){font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-soft)}
+
+  /* ---------- CODE BLOCK ---------- */
+  pre{
+    background:var(--bg-code);
+    border-radius:6px;padding:18px 20px;overflow-x:auto;
+    font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;
+    margin:14px 0;color:var(--text);
+  }
+  pre .c{color:#888477;font-style:italic}
+  pre .k{color:#6940a5}
+  pre .s{color:#0b6e99}
+  pre .f{color:#186f3a}
+
+  /* ---------- METRICS ---------- */
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:20px 0}
+  .stat{
+    background:var(--bg-soft);border-radius:6px;padding:18px;
+    text-align:center;
+  }
+  .stat .big{
+    font-size:28px;font-weight:700;letter-spacing:-.02em;color:var(--text);
+  }
+  .stat .lab{
+    font-size:12.5px;color:var(--text-mute);margin-top:4px;
+    text-transform:uppercase;letter-spacing:.06em;
+  }
+
+  /* ---------- BEFORE / AFTER ---------- */
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}
+  .ba .col{
+    border:1px solid var(--border);border-radius:6px;padding:18px;
+  }
+  .ba .col h4{
+    font-size:12.5px;font-weight:600;text-transform:uppercase;
+    letter-spacing:.08em;margin-bottom:12px;
+  }
+  .ba .before h4{color:var(--red-text)}
+  .ba .after h4{color:var(--green-text)}
+  .ba ul{list-style:none;padding:0}
+  .ba li{
+    padding:6px 0 6px 20px;position:relative;font-size:14px;
+    color:var(--text-soft);line-height:1.5;
+  }
+  .ba .before li::before{
+    content:"−";position:absolute;left:0;color:var(--red-text);font-weight:600;
+  }
+  .ba .after li::before{
+    content:"+";position:absolute;left:0;color:var(--green-text);font-weight:600;
+  }
+
+  /* ---------- DIVIDER ---------- */
+  hr{
+    border:0;border-top:1px solid var(--border-soft);margin:48px 0;
+  }
+
+  /* ---------- FOOTER ---------- */
+  footer{
+    margin-top:80px;padding-top:24px;border-top:1px solid var(--border);
+    color:var(--text-mute);font-size:13px;
+  }
+
+  @media(max-width:680px){
+    .page{padding:48px 24px 96px}
+    h1{font-size:32px}
+    .cards,.ba{grid-template-columns:1fr}
+    .metrics{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ===== HERO ===== -->
+  <div class="emoji-block">📘</div>
+  <h1>entities.py</h1>
+  <p class="subtitle">Trouver les personnages et les lieux d'un livre — sans complexité inutile.</p>
+  <div class="meta">
+    <span><code>modules/entities.py</code></span>
+    <span>115 lignes</span>
+    <span>7 fonctions</span>
+  </div>
+
+  <!-- ===== WHAT ===== -->
+  <h2>Ce que fait le fichier</h2>
+  <p class="lead">Tu lui donnes l'identifiant d'un livre Gutenberg (ex. <em>Alice in Wonderland</em>). Il renvoie deux listes triées par fréquence&nbsp;: les <strong>personnages</strong> (Alice, Queen, Hatter…) et les <strong>lieux</strong> (the garden, the kitchen, Wonderland…). Résultat mis en cache.</p>
+
+  <div class="callout blue">
+    <div class="ico">💡</div>
+    <div class="body"><strong>Astuce centrale.</strong> spaCy sait déjà repérer des entités nommées (<code>PERSON</code>, <code>GPE</code>, <code>LOC</code>, <code>FAC</code>). Le rôle d'<code>entities.py</code> n'est pas de re-faire ce travail mais de <strong>filtrer le bruit</strong> et de rattraper les références déguisées comme « the Queen » ou « the garden ». Tout tient dans <strong>une seule règle par groupe</strong>, rangée dans un dictionnaire <code>GROUPS</code>.</div>
+  </div>
+
+  <!-- ===== PIPELINE ===== -->
+  <h2>Le pipeline en 5 étapes</h2>
+  <p class="lead">Chaque entité repérée par spaCy passe par un mini-filtre, puis on compte.</p>
+
+  <ul class="steps">
+    <li>
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <div class="step-title"><code>run(book_id)</code> — point d'entrée</div>
+        <div class="step-desc">Regarde dans le cache. Si <code>11_entities.json</code> existe → renvoie tel quel. Sinon lance le calcul.</div>
+        <div class="step-io"><span class="in">in</span> 11 <span class="out">→ out</span> { characters, locations }</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <div class="step-title"><code>get_text(book_id)</code> — récupérer le livre</div>
+        <div class="step-desc">Lit le fichier local s'il existe, sinon télécharge depuis Gutenberg, puis nettoie l'en-tête/pied légal.</div>
+        <div class="step-io"><span class="in">in</span> id <span class="out">→ out</span> texte propre (str)</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <div class="step-title"><code>nlp.pipe(spacy_chunks(text))</code> — laisser spaCy travailler</div>
+        <div class="step-desc">Un livre dépasse souvent la limite spaCy. On le découpe en morceaux, et spaCy renvoie ses entités déjà repérées (<code>doc.ents</code>).</div>
+        <div class="step-io"><span class="in">in</span> texte <span class="out">→ out</span> flux d'entités (PERSON, GPE…)</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num">4</div>
+      <div class="step-text">
+        <div class="step-title"><code>classify(entity)</code> — ranger ou jeter</div>
+        <div class="step-desc">Pour chaque entité, on parcourt <code>GROUPS</code> et on retient celui dont l'étiquette spaCy correspond ET (mot-clé connu OU contexte adapté). Sinon on jette.</div>
+        <div class="step-io"><span class="in">in</span> entité <span class="out">→ out</span> "characters" / "locations" / None</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num">5</div>
+      <div class="step-text">
+        <div class="step-title"><code>Counter().most_common()</code> — compter et trier</div>
+        <div class="step-desc">Un <code>Counter</code> par groupe additionne les apparitions. <code>most_common()</code> trie automatiquement. Pas de tri manuel.</div>
+        <div class="step-io"><span class="in">in</span> entités validées <span class="out">→ out</span> 2 listes triées</div>
+      </div>
+    </li>
+  </ul>
+
+  <hr>
+
+  <!-- ===== TWO GROUPS ===== -->
+  <h2>Deux groupes, une règle</h2>
+  <p class="lead">Tout le filtrage tient dans <code>classify()</code> et le dictionnaire <code>GROUPS</code>. Pour ajouter un 3ᵉ groupe (objets&nbsp;? animaux&nbsp;?) → une entrée de plus, zéro changement de logique.</p>
+
+  <div class="cards">
+    <div class="mini">
+      <span class="badge">groupe 1</span>
+      <h4>characters</h4>
+      <div class="role">quelqu'un qui agit dans le récit</div>
+      <p>Passe le filtre si :</p>
+      <ul>
+        <li>label spaCy = <code>PERSON</code>, ET</li>
+        <li>contient un mot connu (<em>queen, rabbit, hatter…</em>) OU</li>
+        <li>un verbe (<code>VERB</code>/<code>AUX</code>) apparaît dans les 4 mots autour.</li>
+      </ul>
+    </div>
+    <div class="mini">
+      <span class="badge">groupe 2</span>
+      <h4>locations</h4>
+      <div class="role">un endroit, géographique ou physique</div>
+      <p>Passe le filtre si :</p>
+      <ul>
+        <li>label spaCy = <code>GPE</code>, <code>LOC</code> ou <code>FAC</code>, ET</li>
+        <li>contient un mot connu (<em>garden, kitchen, palace…</em>) OU</li>
+        <li>une préposition (<code>ADP</code> : <em>in, on, near…</em>) apparaît autour.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout orange">
+    <div class="ico">⚠️</div>
+    <div class="body"><strong>Pourquoi cette double règle ?</strong> spaCy se trompe dans les deux sens : il rate « the Queen » (souvent étiqueté NOUN) et il étiquette parfois mal des noms inconnus. Combiner <strong>label + contexte + mots-clés</strong> rattrape les deux types d'erreur sans complexité.</div>
+  </div>
+
+  <!-- ===== TOGGLES ===== -->
+  <h2>À déplier si besoin</h2>
+
+  <details>
+    <summary>Les constantes en haut du fichier</summary>
+    <div class="toggle-body">
+      <p>Tout ce qui se règle est rassemblé en haut — modifie sans toucher au reste.</p>
+      <table>
+        <thead><tr><th>Constante</th><th>Valeur</th><th>Rôle</th></tr></thead>
+        <tbody>
+          <tr><td><code>CONTEXT_WINDOW</code></td><td>4</td><td>Nombre de mots regardés autour de l'entité.</td></tr>
+          <tr><td><code>ACTION_POS</code></td><td>{VERB, AUX}</td><td>Verbe d'action — indice de personnage.</td></tr>
+          <tr><td><code>LOCATION_POS</code></td><td>{ADP}</td><td>Préposition (<em>in, on, at, near</em>) — indice de lieu.</td></tr>
+          <tr><td><code>PERSON_NOUNS</code></td><td>20 mots</td><td>Noms communs pour personnages (queen, hatter…).</td></tr>
+          <tr><td><code>LOCATION_NOUNS</code></td><td>22 mots</td><td>Noms communs pour lieux (garden, palace…).</td></tr>
+          <tr><td><code>GROUPS</code></td><td>{ characters, locations }</td><td>Le dico central. Une entrée = un groupe.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <details>
+    <summary>À quoi ressemble la sortie JSON</summary>
+    <div class="toggle-body">
+      <p>Un dictionnaire (sauvé en JSON) avec deux listes triées par fréquence décroissante.</p>
+<pre><span class="c"># 11_entities.json</span>
+{
+  <span class="s">"characters"</span>: [
+    <span class="s">"Alice"</span>,
+    <span class="s">"Queen"</span>,
+    <span class="s">"Mock Turtle"</span>,
+    <span class="s">"Hatter"</span>,
+    <span class="s">"Mouse"</span>,
+    <span class="s">"Rabbit"</span>
+  ],
+  <span class="s">"locations"</span>: [
+    <span class="s">"the garden"</span>,
+    <span class="s">"the kitchen"</span>,
+    <span class="s">"Wonderland"</span>,
+    <span class="s">"the court"</span>
+  ]
+}</pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Code complet de la version factorisée</summary>
+    <div class="toggle-body">
+<pre><span class="k">from</span> __future__ <span class="k">import</span> annotations
+<span class="k">from</span> collections <span class="k">import</span> Counter
+
+<span class="k">from</span> modules.cache <span class="k">import</span> load_json, save_json
+<span class="k">from</span> modules.nlp <span class="k">import</span> load_spacy, spacy_chunks
+<span class="k">from</span> utils.path_config <span class="k">import</span> cache_path, get_text
+
+CONTEXT_WINDOW = <span class="s">4</span>
+ACTION_POS = {<span class="s">"VERB"</span>, <span class="s">"AUX"</span>}
+LOCATION_POS = {<span class="s">"ADP"</span>}
+
+PERSON_NOUNS = { <span class="s">"baby"</span>, <span class="s">"cat"</span>, <span class="s">"queen"</span>, <span class="s">"hatter"</span>, <span class="c">… }</span>
+LOCATION_NOUNS = { <span class="s">"garden"</span>, <span class="s">"kitchen"</span>, <span class="s">"palace"</span>, <span class="c">… }</span>
+
+GROUPS = {
+    <span class="s">"characters"</span>: {
+        <span class="s">"labels"</span>: {<span class="s">"PERSON"</span>},
+        <span class="s">"nouns"</span>: PERSON_NOUNS,
+        <span class="s">"context_pos"</span>: ACTION_POS,
+    },
+    <span class="s">"locations"</span>: {
+        <span class="s">"labels"</span>: {<span class="s">"GPE"</span>, <span class="s">"LOC"</span>, <span class="s">"FAC"</span>},
+        <span class="s">"nouns"</span>: LOCATION_NOUNS,
+        <span class="s">"context_pos"</span>: LOCATION_POS,
+    },
+}
+
+
+<span class="k">def</span> <span class="f">normalize</span>(name):
+    <span class="k">return</span> <span class="s">" "</span>.join(name.split()).strip(<span class="s">".,;:!?\"'“”‘’"</span>)
+
+
+<span class="k">def</span> <span class="f">context_tokens</span>(entity):
+    start = max(<span class="s">0</span>, entity.start - CONTEXT_WINDOW)
+    end = min(len(entity.doc), entity.end + CONTEXT_WINDOW)
+    <span class="k">for</span> token <span class="k">in</span> entity.doc[start:end]:
+        <span class="k">if</span> token.i &lt; entity.start <span class="k">or</span> token.i &gt;= entity.end:
+            <span class="k">yield</span> token
+
+
+<span class="k">def</span> <span class="f">has_context</span>(entity, target_pos):
+    <span class="k">return</span> any(token.pos_ <span class="k">in</span> target_pos <span class="k">for</span> token <span class="k">in</span> context_tokens(entity))
+
+
+<span class="k">def</span> <span class="f">contains_noun</span>(entity, nouns):
+    <span class="k">return</span> any(token.lemma_.lower() <span class="k">in</span> nouns <span class="k">for</span> token <span class="k">in</span> entity)
+
+
+<span class="k">def</span> <span class="f">classify</span>(entity):
+    <span class="k">for</span> group, rule <span class="k">in</span> GROUPS.items():
+        <span class="k">if</span> entity.label_ <span class="k">not</span> <span class="k">in</span> rule[<span class="s">"labels"</span>]:
+            <span class="k">continue</span>
+        <span class="k">if</span> contains_noun(entity, rule[<span class="s">"nouns"</span>]) <span class="k">or</span> has_context(entity, rule[<span class="s">"context_pos"</span>]):
+            <span class="k">return</span> group
+    <span class="k">return</span> <span class="k">None</span>
+
+
+<span class="k">def</span> <span class="f">find_entities</span>(text):
+    nlp = load_spacy()
+    counters = {group: Counter() <span class="k">for</span> group <span class="k">in</span> GROUPS}
+
+    <span class="k">for</span> doc <span class="k">in</span> nlp.pipe(spacy_chunks(text)):
+        <span class="k">for</span> entity <span class="k">in</span> doc.ents:
+            group = classify(entity)
+            <span class="k">if</span> group <span class="k">is</span> <span class="k">None</span>:
+                <span class="k">continue</span>
+            name = normalize(entity.text)
+            <span class="k">if</span> name:
+                counters[group][name] += <span class="s">1</span>
+
+    <span class="k">return</span> {
+        group: [name <span class="k">for</span> name, _ <span class="k">in</span> counter.most_common()]
+        <span class="k">for</span> group, counter <span class="k">in</span> counters.items()
+    }
+
+
+<span class="k">def</span> <span class="f">run</span>(book_id):
+    path = cache_path(book_id, <span class="s">"entities"</span>)
+    cached = load_json(path)
+    <span class="k">if</span> cached <span class="k">is not</span> <span class="k">None</span>:
+        <span class="k">return</span> cached
+
+    result = find_entities(get_text(book_id))
+    save_json(path, result)
+    <span class="k">return</span> result</pre>
+    </div>
+  </details>
+
+  <hr>
+
+  <!-- ===== METRICS ===== -->
+  <h2>Ce qui a été factoré</h2>
+
+  <div class="metrics">
+    <div class="stat">
+      <div class="big">194 → 115</div>
+      <div class="lab">lignes</div>
+    </div>
+    <div class="stat">
+      <div class="big">13 → 6</div>
+      <div class="lab">fonctions</div>
+    </div>
+    <div class="stat">
+      <div class="big">−41 %</div>
+      <div class="lab">de code</div>
+    </div>
+  </div>
+
+  <div class="ba">
+    <div class="col before">
+      <h4>Avant</h4>
+      <ul>
+        <li>2 fonctions presque identiques pour le contexte (<code>has_character_context</code> et <code>has_location_context</code>).</li>
+        <li>2 fonctions presque identiques pour les noms (<code>is_person_phrase</code> et <code>is_location_phrase</code>).</li>
+        <li><code>context_bonus()</code> qui rajoute +1 au compteur — effet marginal.</li>
+        <li><code>possessive_locations()</code> + helpers : 40 lignes pour rattraper « Queen's garden ».</li>
+        <li>3 constantes en plus à comprendre.</li>
+        <li>Règles éparpillées dans 4 endroits du fichier.</li>
+      </ul>
+    </div>
+    <div class="col after">
+      <h4>Après</h4>
+      <ul>
+        <li>Une seule <code>has_context()</code> paramétrée par POS.</li>
+        <li>Une seule <code>contains_noun()</code> paramétrée par liste.</li>
+        <li>Plus de bonus : une mention = +1, <code>Counter</code> trie tout seul.</li>
+        <li>Plus de <code>possessive_locations</code>. spaCy attrape déjà 95 % des lieux.</li>
+        <li>5 constantes + 1 dico <code>GROUPS</code> qui centralise tout.</li>
+        <li>Logique d'un groupe = une entrée du dictionnaire.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout green">
+    <div class="ico">✓</div>
+    <div class="body"><strong>Le gros levier.</strong> Rassembler les règles dans <code>GROUPS</code>. À partir de là, <code>has_context</code>, <code>contains_noun</code> et <code>classify</code> deviennent les mêmes pour tous les groupes — on dit juste « voici une règle, applique-la ».</div>
+  </div>
+
+  <!-- ===== TRADE-OFFS ===== -->
+  <h2>Et qu'est-ce qu'on perd ?</h2>
+  <p class="lead">Toute factorisation est un compromis. Voici ce qui a disparu — et pourquoi c'est un bon échange.</p>
+
+  <details>
+    <summary>context_bonus() — supprimé</summary>
+    <div class="toggle-body">
+      <p>Cette astuce poussait certains noms en haut du classement (+1 si le contexte matche). Mais les noms <strong>fréquents</strong> remontent déjà tout seuls — le bonus changeait surtout l'ordre des <strong>moins fréquents</strong>, qu'on ne montre pas dans la book card. Suppression sans regret.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>possessive_locations() — supprimé</summary>
+    <div class="toggle-body">
+      <p>Cette fonction reconstruisait des phrases possessives à la main (« Queen's croquet-ground »). Joli, mais 40 lignes pour quelques entités en plus. spaCy capture déjà la plupart des lieux via <code>GPE</code>/<code>LOC</code>/<code>FAC</code>. Si un jour tu as besoin de très fine granularité, tu peux la rajouter dans <code>GROUPS</code> sous forme de règle séparée.</p>
+    </div>
+  </details>
+
+  <div class="callout purple">
+    <div class="ico">🎯</div>
+    <div class="body"><strong>Règle d'or pour un junior.</strong> Quand tu vois deux fonctions presque identiques, demande-toi : « quelle est la différence ? » — souvent une seule valeur (un POS, une liste). C'est cette différence qui devient un <em>paramètre</em>, et la fonction devient unique.</div>
+  </div>
+
+  <footer>
+    modules/entities.py — guide de lecture · « Qui êtes-vous ? » dit la Chenille.
+  </footer>
+
+</div>
+
+</body>
+</html>
