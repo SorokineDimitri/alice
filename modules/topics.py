@@ -138,6 +138,12 @@ def topic_key(index: int, theme: str) -> str:
     return f"{index}: {theme}"
 
 
+def theme_from_key(key: str) -> str:
+    if ": " not in key:
+        return ""
+    return key.split(": ", 1)[1]
+
+
 def find_topics(text: str) -> dict[str, list[str]]:
     sections = lemmatized_sections(text, keep_pos=THEME_POS)
     if not sections:
@@ -191,3 +197,11 @@ def run(book_id):
     result = find_topics(text)
     save_json(path, result)
     return result
+
+
+def topic_themes(book_id: int) -> list[str]:
+    return [
+        theme
+        for theme in (theme_from_key(key) for key in run(book_id))
+        if theme
+    ]
