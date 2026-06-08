@@ -3,6 +3,16 @@ import json
 import sys
 
 
+TASK_MODULES = {
+    "lexdiv": "lexdiv",
+    "topics": "topics",
+    "entities": "entities",
+    "summarize": "summary",
+    "similar": "similarity",
+    "card": "card",
+}
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="bookworm",
@@ -13,7 +23,7 @@ def main():
     options.add_argument("--lexdiv", type=int, metavar="ID",
                          help="Mesures de diversite lexicale du livre")
     options.add_argument("--topics", type=int, metavar="ID",
-                         help="Principaux topics par section")
+                         help="Principaux topics du livre")
     options.add_argument("--entities", type=int, metavar="ID",
                          help="Personnages et lieux du livre")
     options.add_argument("--summarize", type=int, metavar="ID",
@@ -31,31 +41,28 @@ def main():
         print(f"Erreur: {exc}", file=sys.stderr)
         return 1
 
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    # Une chaine (ex. --summarize) est affichee brute pour rendre les sauts
+    # de ligne ; les dict/list gardent le format JSON.
+    if isinstance(result, str):
+        print(result)
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
 def run_task(args):
-    if args.lexdiv is not None:
-        from modules import lexdiv
-        return lexdiv.run(args.lexdiv)
-    if args.topics is not None:
-        from modules import topics
-        return topics.run(args.topics)
-    if args.entities is not None:
-        from modules import entities
-        return entities.run(args.entities)
-    if args.summarize is not None:
-        from modules import summary
-        return summary.run(args.summarize)
-    if args.similar is not None:
-        from modules import similarity
-        return similarity.run(args.similar)
-    if args.card is not None:
-        from modules import card
-        return card.run(args.card)
+    for task, module_name in TASK_MODULES.items():
+        book_id = getattr(args, task)
+        if book_id is not None:
+            module = __import__(f"modules.{module_name}", fromlist=["run"])
+            try:
+                if task == "similar" and hasattr(module, "prepare"):
+                    module.prepare(book_id)
+                return module.run(book_id)
+            except AttributeError:
+                raise RuntimeError(f"--{task} is not implemented yet.")
+    raise RuntimeError("No task selected.")
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
