@@ -41,7 +41,12 @@ def main():
         print(f"Erreur: {exc}", file=sys.stderr)
         return 1
 
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    # Une chaine (ex. --summarize) est affichee brute pour rendre les sauts
+    # de ligne ; les dict/list gardent le format JSON.
+    if isinstance(result, str):
+        print(result)
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
