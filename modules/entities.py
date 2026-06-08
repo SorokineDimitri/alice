@@ -1,91 +1,54 @@
 from __future__ import annotations
 
+import functools
+import json
 from collections import Counter
+from pathlib import Path
 
 from modules.cache import load_json, save_json
 from modules.nlp import load_spacy, spacy_chunks
 from utils.path_config import cache_path, get_text
 
+RULES_PATH = Path(__file__).resolve().parent.parent / "data" / "entity_rules.json"
 CONTEXT_WINDOW = 4
+ENTITY_LIMIT = 20
 ACTION_POS = {"VERB", "AUX"}
 CHARACTER_DEPS = {"nsubj", "dobj", "pobj", "attr", "appos", "conj"}
 INVALID_ENTITY_STARTS = {"a", "an", "the", "this", "that", "these", "those"}
 INVALID_ENTITY_POS = {"ADV", "VERB"}
 CHARACTER_LABELS = {"PERSON", "GPE", "LOC", "FAC"}
 MIN_CHARACTER_CONTEXTS = 2
-LOCATION_PREPOSITIONS = {
-    "across",
-    "behind",
-    "beside",
-    "between",
-    "from",
-    "in",
-    "inside",
-    "into",
-    "near",
-    "of",
-    "on",
-    "onto",
-    "outside",
-    "through",
-    "to",
-    "toward",
-    "towards",
-    "under",
-    "upon",
-}
-LOCATION_NOUN_PREPOSITIONS = LOCATION_PREPOSITIONS - {"of", "on", "upon"}
+LOCATION_NOUN_EXCLUDED_PREPOSITIONS = {"of", "on", "upon"}
 POSSESSIVE_MARKERS = {"'s", "’s"}
 OWNER_POS = {"PROPN", "NOUN", "ADJ"}
 LOCATION_PHRASE_POS = {"PROPN", "NOUN", "ADJ"}
 NOUN_POS = {"NOUN", "PROPN"}
-NON_LOCATION_NOUNS = {
-    "amusement",
-    "arm",
-    "attention",
-    "chance",
-    "chair",
-    "crown",
-    "cry",
-    "dinner",
-    "disgust",
-    "dream",
-    "ear",
-    "eagle",
-    "elbow",
-    "eye",
-    "feeling",
-    "foot",
-    "favour",
-    "glove",
-    "grasp",
-    "hair",
-    "hand",
-    "handwriting",
-    "head",
-    "knee",
-    "lap",
-    "life",
-    "love",
-    "master",
-    "memory",
-    "mouth",
-    "nature",
-    "neck",
-    "nostril",
-    "party",
-    "place",
-    "province",
-    "remark",
-    "shawl",
-    "shoulder",
-    "slate",
-    "speech",
-    "surprise",
-    "tail",
-    "tone",
-    "voice",
-}
+
+
+@functools.lru_cache(maxsize=1)
+def entity_rules() -> dict[str, set[str]]:
+    payload = json.loads(RULES_PATH.read_text(encoding="utf-8"))
+    return {
+        key: {
+            value.lower()
+            for value in values
+            if isinstance(value, str)
+        }
+        for key, values in payload.items()
+        if isinstance(values, list)
+    }
+
+
+def location_prepositions() -> set[str]:
+    return entity_rules().get("location_prepositions", set())
+
+
+def location_noun_prepositions() -> set[str]:
+    return location_prepositions() - LOCATION_NOUN_EXCLUDED_PREPOSITIONS
+
+
+def non_location_nouns() -> set[str]:
+    return entity_rules().get("non_location_nouns", set())
 
 
 def normalize_entity(name: str) -> str:
@@ -125,7 +88,7 @@ def valid_location_entity(entity) -> bool:
         valid_entity_name(name)
         and not is_lowercase_phrase(entity)
         and not (previous is not None and previous.like_num)
-        and not (noun_lemmas(entity) & NON_LOCATION_NOUNS)
+        and not (noun_lemmas(entity) & non_location_nouns())
     )
 
 
@@ -160,7 +123,7 @@ def has_character_context(entity) -> bool:
 
 def has_location_context(entity) -> bool:
     return any(
-        token.pos_ == "ADP" and token.lower_ in LOCATION_PREPOSITIONS
+        token.pos_ == "ADP" and token.lower_ in location_prepositions()
         for token in context_tokens(entity)
     )
 
@@ -170,7 +133,7 @@ def has_leading_location_context(doc, start: int) -> bool:
         token = doc[index]
         if token.pos_ == "DET" or token.is_punct:
             continue
-        return token.pos_ == "ADP" and token.lower_ in LOCATION_NOUN_PREPOSITIONS
+        return token.pos_ == "ADP" and token.lower_ in location_noun_prepositions()
     return False
 
 
@@ -260,7 +223,7 @@ def learn_book_entities(docs) -> tuple[set[str], set[str]]:
             location = location_tokens(doc, token.i)
             if owner and location and has_leading_location_context(doc, owner[0].i):
                 location_nouns.update(
-                    noun_lemmas(location, {"NOUN"}) - NON_LOCATION_NOUNS
+                    noun_lemmas(location, {"NOUN"}) - non_location_nouns()
                 )
 
     character_names = {
@@ -285,17 +248,19 @@ def find_entities(text: str) -> dict[str, list[str]]:
             if group is None:
                 continue
             name = normalize_entity(entity.text)
-            if valid_entity_name(name):
-                counters[group][name] += 1 + context_bonus(entity, group)
+            counters[group][name] += 1 + context_bonus(entity, group)
         for location in possessive_locations(doc, location_nouns):
             counters["locations"][location] += 2
 
-    characters = [name for name, _ in counters["characters"].most_common()]
-    character_names = set(characters)
+    ranked_characters = [
+        name for name, _ in counters["characters"].most_common()
+    ]
+    character_names = set(ranked_characters)
+    characters = ranked_characters[:ENTITY_LIMIT]
     locations = [
         name for name, _ in counters["locations"].most_common()
         if name not in character_names
-    ]
+    ][:ENTITY_LIMIT]
 
     return {
         "characters": characters,
@@ -303,11 +268,30 @@ def find_entities(text: str) -> dict[str, list[str]]:
     }
 
 
+def valid_cached_entities(payload) -> bool:
+    return (
+        isinstance(payload, dict)
+        and isinstance(payload.get("characters"), list)
+        and isinstance(payload.get("locations"), list)
+        and len(payload["characters"]) <= ENTITY_LIMIT
+        and len(payload["locations"]) <= ENTITY_LIMIT
+        and all(isinstance(name, str) for name in payload["characters"])
+        and all(isinstance(name, str) for name in payload["locations"])
+    )
+
+
+def cache_is_current(path) -> bool:
+    return path.stat().st_mtime >= max(
+        Path(__file__).stat().st_mtime,
+        RULES_PATH.stat().st_mtime,
+    )
+
+
 def run(book_id):
     path = cache_path(book_id, "entities")
 
     cached = load_json(path)
-    if cached is not None:
+    if cached is not None and cache_is_current(path) and valid_cached_entities(cached):
         return cached
 
     result = find_entities(get_text(book_id))
