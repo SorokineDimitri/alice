@@ -17,14 +17,17 @@ def cache_path(book_id: int, task: str) -> Path:
     return CACHE_DIR / f"{book_id}_{task}.json"
 
 
-def get_text(book_id: int) -> str:
+def get_raw_text(book_id: int) -> str:
     path = raw_path(book_id)
 
     if path.exists():
-        raw = path.read_text(encoding="utf-8")
-    else:
-        raw = download(book_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(raw, encoding="utf-8")
+        return path.read_text(encoding="utf-8")
 
-    return clean(raw)
+    raw = download(book_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(raw, encoding="utf-8")
+    return raw
+
+
+def get_text(book_id: int) -> str:
+    return clean(get_raw_text(book_id))

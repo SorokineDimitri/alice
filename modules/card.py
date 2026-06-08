@@ -4,13 +4,10 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from requests import RequestException
-
 from modules import entities, lexdiv, similarity, summary, topics
 from modules.cache import load_json, save_json
 from modules.cleaner import START_MARKER
-from modules.gutenberg import download
-from utils.path_config import cache_path, raw_path
+from utils.path_config import cache_path, get_raw_text
 
 REQUIRED_KEYS = {"info", "lexdiv", "topics", "entities", "summary", "similar"}
 BOOKSHELF_LIMIT = 5
@@ -28,21 +25,6 @@ DEPENDENCY_FILES = (
     Path(summary.__file__),
     Path(similarity.__file__),
 )
-
-
-def raw_text(book_id: int) -> str:
-    path = raw_path(book_id)
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-
-    try:
-        text = download(book_id)
-    except RequestException as exc:
-        raise RuntimeError(f"Livre {book_id} introuvable") from exc
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    return text
 
 
 def clean_line(line: str) -> str:
@@ -112,7 +94,7 @@ def numbered_topics(book_id: int) -> dict[str, list[str]]:
 def info(book_id: int) -> dict[str, str]:
     return {
         "id": str(book_id),
-        "authors": find_author(raw_text(book_id)),
+        "authors": find_author(get_raw_text(book_id)),
         "bookshelves": bookshelves_from_topics(book_id),
     }
 

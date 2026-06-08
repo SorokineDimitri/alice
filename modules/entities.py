@@ -12,19 +12,21 @@ from utils.path_config import cache_path, get_text
 RULES_PATH = Path(__file__).resolve().parent.parent / "data" / "entity_rules.json"
 CONTEXT_WINDOW = 4
 ENTITY_LIMIT = 20
+ENTITY_SAMPLE_CHARS = 250_000
+LARGE_BOOK_CHARS = ENTITY_SAMPLE_CHARS * 3
 ACTION_POS = {"VERB", "AUX"}
 CHARACTER_DEPS = {"nsubj", "dobj", "pobj", "attr", "appos", "conj"}
 INVALID_ENTITY_STARTS = {"a", "an", "the", "this", "that", "these", "those"}
 INVALID_ENTITY_POS = {"ADV", "VERB"}
-CHARACTER_LABELS = {"PERSON", "GPE", "LOC", "FAC"}
+CHARACTER_LABELS = {"PERSON"}
+LOCATION_LABELS = {"GPE", "LOC", "FAC"}
 MIN_CHARACTER_CONTEXTS = 2
 LOCATION_NOUN_EXCLUDED_PREPOSITIONS = {"of", "on", "upon"}
+WEAK_LOCATION_PREPOSITIONS = {"of", "to", "toward", "towards"}
 POSSESSIVE_MARKERS = {"'s", "’s"}
 OWNER_POS = {"PROPN", "NOUN", "ADJ"}
 LOCATION_PHRASE_POS = {"PROPN", "NOUN", "ADJ"}
 NOUN_POS = {"NOUN", "PROPN"}
-
-
 @functools.lru_cache(maxsize=1)
 def entity_rules() -> dict[str, set[str]]:
     payload = json.loads(RULES_PATH.read_text(encoding="utf-8"))
@@ -47,8 +49,16 @@ def location_noun_prepositions() -> set[str]:
     return location_prepositions() - LOCATION_NOUN_EXCLUDED_PREPOSITIONS
 
 
+def strong_location_prepositions() -> set[str]:
+    return location_prepositions() - WEAK_LOCATION_PREPOSITIONS
+
+
 def non_location_nouns() -> set[str]:
     return entity_rules().get("non_location_nouns", set())
+
+
+def generic_location_nouns() -> set[str]:
+    return entity_rules().get("location_nouns", set())
 
 
 def normalize_entity(name: str) -> str:
@@ -128,6 +138,13 @@ def has_location_context(entity) -> bool:
     )
 
 
+def has_strong_location_context(entity) -> bool:
+    return any(
+        token.pos_ == "ADP" and token.lower_ in strong_location_prepositions()
+        for token in context_tokens(entity)
+    )
+
+
 def has_leading_location_context(doc, start: int) -> bool:
     for index in range(start - 1, max(-1, start - CONTEXT_WINDOW - 1), -1):
         token = doc[index]
@@ -172,17 +189,33 @@ def is_location_phrase(tokens, location_nouns: set[str]) -> bool:
     return bool(noun_lemmas(tokens, {"NOUN"}) & location_nouns)
 
 
-def entity_group(entity, character_names: set[str], location_nouns: set[str]):
+def is_possessive_location_phrase(tokens) -> bool:
+    return bool(noun_lemmas(tokens, {"NOUN"}) & generic_location_nouns())
+
+
+def is_character_entity(entity, character_names: set[str]) -> bool:
     name = normalize_entity(entity.text)
-    if entity.label_ in CHARACTER_LABELS and valid_character_entity(entity) and name in character_names:
-        return "characters"
-    if entity.label_ == "GPE" and valid_location_entity(entity) and has_location_context(entity):
-        return "locations"
-    if (
+    return (
+        entity.label_ in CHARACTER_LABELS
+        and valid_character_entity(entity)
+        and name in character_names
+    )
+
+
+def is_location_entity(entity, location_nouns: set[str]) -> bool:
+    if entity.label_ == "GPE":
+        return valid_location_entity(entity) and has_strong_location_context(entity)
+    return (
         entity.label_ in {"LOC", "FAC"}
         and valid_location_entity(entity)
         and is_location_phrase(entity, location_nouns)
-    ):
+    )
+
+
+def entity_group(entity, character_names: set[str], location_nouns: set[str]):
+    if is_character_entity(entity, character_names):
+        return "characters"
+    if is_location_entity(entity, location_nouns):
         return "locations"
     return None
 
@@ -194,7 +227,12 @@ def possessive_locations(doc, location_nouns: set[str]):
 
         owner = owner_tokens(doc, token.i)
         location = location_tokens(doc, token.i)
-        if not owner or not location or not is_location_phrase(location, location_nouns):
+        if (
+            not owner
+            or not location
+            or not is_location_phrase(location, location_nouns)
+            or not is_possessive_location_phrase(location)
+        ):
             continue
 
         phrase = clean_phrase(owner + [token] + location)
@@ -223,7 +261,8 @@ def learn_book_entities(docs) -> tuple[set[str], set[str]]:
             location = location_tokens(doc, token.i)
             if owner and location and has_leading_location_context(doc, owner[0].i):
                 location_nouns.update(
-                    noun_lemmas(location, {"NOUN"}) - non_location_nouns()
+                    (noun_lemmas(location, {"NOUN"}) & generic_location_nouns())
+                    - non_location_nouns()
                 )
 
     character_names = {
@@ -233,10 +272,41 @@ def learn_book_entities(docs) -> tuple[set[str], set[str]]:
     return character_names, set(location_nouns)
 
 
+def person_entity_scores(docs) -> Counter:
+    scores = Counter()
+
+    for doc in docs:
+        for entity in doc.ents:
+            if not valid_character_entity(entity):
+                continue
+            name = normalize_entity(entity.text)
+            if entity.label_ == "PERSON":
+                scores[name] += 2
+            elif has_character_context(entity):
+                scores[name] += 1
+
+    return scores
+
+
+def entity_text_sample(text: str) -> str:
+    if len(text) <= LARGE_BOOK_CHARS:
+        return text
+
+    middle_start = (len(text) - ENTITY_SAMPLE_CHARS) // 2
+    return "\n\n".join(
+        (
+            text[:ENTITY_SAMPLE_CHARS],
+            text[middle_start:middle_start + ENTITY_SAMPLE_CHARS],
+            text[-ENTITY_SAMPLE_CHARS:],
+        )
+    )
+
+
 def find_entities(text: str) -> dict[str, list[str]]:
     nlp = load_spacy()
-    docs = list(nlp.pipe(spacy_chunks(text)))
+    docs = list(nlp.pipe(spacy_chunks(entity_text_sample(text))))
     character_names, location_nouns = learn_book_entities(docs)
+    person_scores = person_entity_scores(docs)
     counters = {
         "characters": Counter(),
         "locations": Counter(),
@@ -260,6 +330,7 @@ def find_entities(text: str) -> dict[str, list[str]]:
     locations = [
         name for name, _ in counters["locations"].most_common()
         if name not in character_names
+        and person_scores[name] < counters["locations"][name]
     ][:ENTITY_LIMIT]
 
     return {
