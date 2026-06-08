@@ -51,6 +51,8 @@ def run_task(args):
         if book_id is not None:
             module = __import__(f"modules.{module_name}", fromlist=["run"])
             try:
+                if task == "similar" and hasattr(module, "prepare"):
+                    module.prepare(book_id)
                 return module.run(book_id)
             except AttributeError:
                 raise RuntimeError(f"--{task} is not implemented yet.")

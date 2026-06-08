@@ -1,0 +1,107 @@
+[
+  {
+    "id": 11,
+    "title": "Alice's Adventures in Wonderland",
+    "category": "Children / Young Adult"
+  },
+  {
+    "id": 12,
+    "title": "Through the Looking-Glass",
+    "category": "Children / Young Adult"
+  },
+  {
+    "id": 16,
+    "title": "Peter Pan",
+    "category": "Children / Young Adult"
+  },
+  {
+    "id": 55,
+    "title": "The Wonderful Wizard of Oz",
+    "category": "Children / Young Adult"
+  },
+  {
+    "id": 113,
+    "title": "The Secret Garden",
+    "category": "Children / Young Adult"
+  },
+  {
+    "id": 120,
+    "title": "Treasure Island",
+    "category": "Children / Young Adult"
+  },
+  {
+    "id": 236,
+    "title": "The Jungle Book",
+    "category": "Children / Young Adult"
+  },
+  {
+    "id": 108,
+    "title": "The Return of Sherlock Holmes",
+    "category": "Crime, Mystery & Thriller"
+  },
+  {
+    "id": 834,
+    "title": "The Memoirs of Sherlock Holmes",
+    "category": "Crime, Mystery & Thriller"
+  },
+  {
+    "id": 863,
+    "title": "The Mysterious Affair at Styles",
+    "category": "Crime, Mystery & Thriller"
+  },
+  {
+    "id": 1661,
+    "title": "The Adventures of Sherlock Holmes",
+    "category": "Crime, Mystery & Thriller"
+  },
+  {
+    "id": 61262,
+    "title": "Poirot Investigates",
+    "category": "Crime, Mystery & Thriller"
+  },
+  {
+    "id": 69087,
+    "title": "The Murder of Roger Ackroyd",
+    "category": "Crime, Mystery & Thriller"
+  },
+  {
+    "id": 70114,
+    "title": "The Big Four",
+    "category": "Crime, Mystery & Thriller"
+  },
+  {
+    "id": 35,
+    "title": "The Time Machine",
+    "category": "Science-Fiction & Fantasy"
+  },
+  {
+    "id": 36,
+    "title": "The War of the Worlds",
+    "category": "Science-Fiction & Fantasy"
+  },
+  {
+    "id": 84,
+    "title": "Frankenstein; Or, The Modern Prometheus",
+    "category": "Science-Fiction & Fantasy"
+  },
+  {
+    "id": 159,
+    "title": "The Island of Doctor Moreau",
+    "category": "Science-Fiction & Fantasy"
+  },
+  {
+    "id": 164,
+    "title": "Twenty Thousand Leagues under the Sea",
+    "category": "Science-Fiction & Fantasy"
+  },
+  {
+    "id": 345,
+    "title": "Dracula",
+    "category": "Science-Fiction & Fantasy"
+  },
+  {
+    "id": 68283,
+    "title": "The Call of Cthulhu",
+    "category": "Science-Fiction & Fantasy"
+  }
+]
