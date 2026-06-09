@@ -1,30 +1,28 @@
 """Phrase d'accroche du livre, generee par GABARIT (template NLG).
 
-On remplit une phrase a trous (toujours grammaticale, car ecrite a la main)
-avec les elements deja extraits :
-  - titre / auteur : metadonnees RDF Gutenberg (--metadata)
+On remplit une phrase a trous avec les elements deja extraits :
+  - titre / auteur : metadonnees extraites du texte brut Gutenberg
   - personnages : --entities
+  - lieux : --entities
   - themes : --topics
 
 Aucun modele ne tourne : c'est de la generation par gabarit, donc legere.
-
-Limite assumee : la phrase herite de la qualite des slots. Si --entities se
-trompe de personnage, la phrase sera fluide mais fausse ("garbage in, out").
-On n'inclut PAS les lieux : le decor est deja dans le titre ("...in
-Wonderland"), et le NER confond lieux cites au passage et vrai cadre fictif.
 """
 
 from __future__ import annotations
 
-from modules import entities, lexdiv, metadata, topics
+import re
 
-MAX_CHARACTERS = 4
+from modules import entities, topics
+from utils import metadata
+
+MAX_SUPPORTING_CHARACTERS = 3
 MAX_THEMES = 4
 
 
 def genre(meta: dict) -> str:
-    """Premier rayon (bookshelf) utilisable comme genre, ex. 'Horror'."""
-    for shelf in meta.get("bookshelves", "").split(","):
+    """Premier theme utilisable comme genre dominant."""
+    for shelf in re.split(r"[,;]", meta.get("bookshelves", "")):
         shelf = shelf.strip()
         if shelf and not shelf.lower().startswith("category"):
             return shelf
@@ -49,6 +47,24 @@ def book_themes(book_id: int) -> list[str]:
     return result
 
 
+def comparable(value: str) -> str:
+    words = re.findall(r"[A-Za-z]+", value.lower())
+    return " ".join(words)
+
+
+def title_location(title: str, locations: list[str]) -> str:
+    title_key = comparable(title)
+    for location in locations:
+        location_key = comparable(location)
+        if location_key and location_key in title_key:
+            return location
+    return ""
+
+
+def main_place(title: str, locations: list[str]) -> str:
+    return title_location(title, locations) or (locations[0] if locations else "")
+
+
 def _join(items: list[str]) -> str:
     """Joint une liste a l'anglaise : 'a, b and c'."""
     if not items:
@@ -58,57 +74,58 @@ def _join(items: list[str]) -> str:
     return ", ".join(items[:-1]) + " and " + items[-1]
 
 
-def build(book_id: int) -> str:
-    meta = metadata.run(book_id)
-    ent = entities.run(book_id)
-    characters = _join(ent.get("characters", [])[:MAX_CHARACTERS])
-    themes = _join(book_themes(book_id)[:MAX_THEMES])
-    book_genre = genre(meta)
+def opening_sentence(meta: dict, characters: list[str], place: str, themes: list[str]) -> str:
+    title = meta["title"]
+    author = meta["authors"]
+    main_theme = f"is mainly associated with the theme of {themes[0]}" if themes else ""
+    if not characters:
+        if main_theme:
+            return f"{title}, by {author}, {main_theme}. The book follows a narrative shaped by its characters, places and recurring themes."
+        return f"{title}, by {author}, follows a narrative shaped by its characters, places and recurring themes."
 
-    # Phrase 1 : identite (titre, auteur, genre).
-    first = f"{meta['title']}, by {meta['authors']},"
-    first += f" is a work of {book_genre}." if book_genre else " is a classic."
+    main_character = characters[0]
+    supporting = _join(characters[1:1 + MAX_SUPPORTING_CHARACTERS])
+    sentence = f'{title}, by {author}, follows {main_character}, the main character,'
+    if supporting:
+        sentence += f" alongside figures such as {supporting}"
+    if place:
+        sentence += f", in {place} serving as one of the important places in the story"
+    sentence += "."
+    return sentence
 
-    # Phrase 2 : contenu (personnages, themes).
-    second = ""
-    if characters:
-        second = f" It follows {characters}"
-        if themes:
-            second += f" in a tale of {themes}"
-        second += "."
-    elif themes:
-        second = f" It is a tale of {themes}."
 
-    # Phrase 3 : echelle concrete (chiffres fiables issus de --lexdiv).
-    stats = lexdiv.run(book_id)
-    tok = stats.get("tok", 0)
-    typ = stats.get("typ", 0)
-    third = (
-        f" The book spans about {tok:,} words drawn from a vocabulary "
-        f"of {typ:,} distinct terms."
+def themes_sentence(meta: dict, themes: list[str]) -> str:
+    if not themes:
+        return f'{meta["title"]} presents a narrative that gradually unfolds around the events and relationships encountered throughout the book.'
+    return (
+        f'{meta["title"]} presents a narrative that gradually unfolds '
+        f"around { _join(themes[:MAX_THEMES]) }."
     )
 
-    # Phrase 4 : arc thematique (themes du debut vers la fin, par chapitre).
+
+def arc_sentence(book_id: int) -> str:
     arc = section_themes(book_id)
     if len(arc) >= 2 and arc[0] != arc[-1]:
-        fourth = (
-            f" Across its {len(arc)} chapters, the story moves from "
-            f"{arc[0]} toward {arc[-1]}."
-        )
-    elif arc:
-        fourth = f" Across its {len(arc)} chapters, it centers on {arc[0]}."
-    else:
-        fourth = ""
+        return f"Across its {len(arc)} chapters, the story moves from {arc[0]} toward {arc[-1]}."
+    if arc:
+        return f"Across its {len(arc)} chapters, the story centers on {arc[0]}."
+    return ""
 
-    # Phrase 5 : style (longueur moyenne des mots, mots rares — via --lexdiv).
-    mwl = stats.get("mwl", 0.0)
-    hap = stats.get("hap", 0)
-    fifth = (
-        f" Its prose averages {mwl:.1f} characters per word, with {hap:,} "
-        f"words used only once."
-    )
 
-    return first + second + third + fourth + fifth
+def build(book_id: int) -> str:
+    meta = metadata.info(book_id)
+    ent = entities.run(book_id)
+    characters = ent.get("characters", [])
+    locations = ent.get("locations", [])
+    themes = book_themes(book_id)
+    place = main_place(meta["title"], locations)
+
+    sentences = [
+        opening_sentence(meta, characters, place, themes),
+        themes_sentence(meta, themes),
+        arc_sentence(book_id),
+    ]
+    return " ".join(sentence for sentence in sentences if sentence)
 
 
 def run(book_id: int) -> str:
