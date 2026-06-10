@@ -1,6 +1,6 @@
 # Architecture de BookWorm
 
-Ce document décrit l'architecture complète du projet : le pipeline de traitement, la communication entre les fichiers, le système de cache et les choix de conception. Pour la référence détaillée de chaque module (API, algorithmes), voir [`MODULES.md`](MODULES.md).
+Ce document décrit l'architecture complète du projet : le pipeline de traitement, la communication entre les fichiers et le système de cache. Pour la référence détaillée de chaque module (API, algorithmes), voir [`MODULES.md`](MODULES.md). Pour les arbitrages techniques, voir [`DESIGN_CHOICES.md`](DESIGN_CHOICES.md).
 
 ## Sommaire
 
@@ -110,64 +110,6 @@ flowchart LR
 **Étape 4 — Synthèse**. `overview.py` assemble des phrases à partir des métadonnées, entités et thèmes ; `summary.py` y ajoute le cache ; `card.py` agrège les six résultats en un seul JSON.
 
 ## 4. Communication entre les fichiers
-
-Le graphe ci-dessous montre **qui importe qui** (flèche = « dépend de »). C'est la carte de référence pour naviguer dans le code :
-
-```mermaid
-flowchart TB
-    BW["bookworm.py"]
-
-    subgraph synthese["Synthèse"]
-        CARD["card.py"]
-        SUM["summary.py"]
-        OVR["overview.py"]
-        META["utils/metadata.py"]
-    end
-
-    subgraph analyse["Analyse"]
-        LEX["lexdiv.py"]
-        TOP["topics.py"]
-        ENT["entities.py"]
-        SIM["similarity.py"]
-    end
-
-    subgraph outils["Outils partagés"]
-        NLP["nlp.py"]
-        CACHE["cache.py"]
-        PC["utils/path_config.py"]
-    end
-
-    subgraph acquisition["Acquisition"]
-        GUT["gutenberg.py"]
-        CLEAN["cleaner.py"]
-    end
-
-    subgraph data["data/"]
-        THEMES[/"literary_themes.json"/]
-        RULES[/"entity_rules.json"/]
-        BOOKS[/"similar_books.json"/]
-    end
-
-    BW -.->|"import dynamique"| LEX & TOP & ENT & SUM & SIM & CARD
-
-    CARD --> META & LEX & TOP & ENT & SUM & SIM
-    SUM --> OVR
-    OVR --> ENT & TOP & META
-    META --> TOP & PC
-    META --> CLEAN
-
-    LEX --> NLP & CACHE & PC
-    TOP --> NLP & CACHE & PC
-    TOP --> THEMES
-    ENT --> NLP & CACHE & PC & META
-    ENT --> RULES
-    SIM --> NLP & CACHE & PC & GUT
-    SIM --> BOOKS
-
-    PC --> CLEAN & GUT
-```
-
-Points notables :
 
 - **`bookworm.py` ne fait aucun `import` en dur des modules d'analyse** : il utilise `__import__("modules." + nom)` à partir de la table `TASK_MODULES`. Le CLI reste donc à 70 lignes et n'a pas besoin d'être modifié quand un module évolue.
 - **`nlp.py` est la seule porte d'entrée vers spaCy et TF-IDF.** Le modèle spaCy est chargé une seule fois par configuration grâce à `functools.lru_cache` — un chargement coûte ~1 s, le partager entre modules est essentiel.
@@ -287,36 +229,4 @@ Tous trois sont chargés une seule fois par processus via `functools.lru_cache`,
 
 ## 8. Choix de conception et compromis
 
-Cette section documente les arbitrages techniques — utile pour comprendre *pourquoi* le code est écrit ainsi.
-
-### TF-IDF + dictionnaire plutôt que LDA / embeddings (topics)
-
-Une modélisation de sujets classique (LDA) produit des sacs de mots difficiles à nommer (« topic 3 : pool, dog, water… »). Notre approche en deux temps — TF-IDF pour trouver les mots saillants de chaque chapitre, puis projection sur un dictionnaire littéraire de 147 thèmes — produit des **labels lisibles** (« nature », « quest », « madness ») et un **arc narratif** (le thème de chaque chapitre, dans l'ordre). Compromis : les thèmes possibles sont bornés par le dictionnaire ; un thème absent du dictionnaire retombe sur `general`.
-
-### Découpage par chapitres avec repli (topics)
-
-Les sections suivent d'abord les **titres posés par l'auteur** (`CHAPTER I`, sections en chiffres romains) — c'est le découpage thématique le plus fidèle. Si aucun titre n'est détecté, repli sur des blocs de 1 500 lemmes. Les sections de moins de 80 mots (pages de titre résiduelles) sont écartées.
-
-### NER hybride : modèle + règles apprises par livre (entities)
-
-`en_core_web_sm` seul produit beaucoup de faux positifs sur la littérature du XIXᵉ (personnification d'animaux, majuscules archaïques). Le module corrige en **trois passes** sur le même document analysé :
-1. **Apprentissage propre au livre** : un nom n'est retenu comme personnage que s'il apparaît au moins 2 fois en position d'acteur (sujet/objet d'un verbe). Cela permet de garder « Mouse » ou « Hatter » dans *Alice* (où les animaux *sont* des personnages) tout en les rejetant dans un roman réaliste.
-2. **Comptage avec bonus contextuel** : chaque occurrence vaut 1 point, +1 si le contexte le confirme (verbe d'action pour un personnage, préposition locative pour un lieu).
-3. **Arbitrage personnage/lieu** : un nom détecté à la fois comme PERSON et comme lieu est tranché par comparaison des scores — un nom plus souvent vu comme personne que comme lieu est écarté de la liste des lieux.
-Enfin, le personnage qui apparaît dans le **titre du livre** est promu en tête de liste.
-
-### Échantillonnage des gros livres (entities)
-
-La NER spaCy est la passe la plus coûteuse du projet. Au-delà de 750 000 caractères, le module analyse un **échantillon début + milieu + fin** (3 × 250 000 caractères) : les personnages principaux d'un roman apparaissent dans ces trois zones, et le temps d'analyse devient borné quel que soit le livre. Compromis assumé : un personnage qui n'existerait qu'au cœur d'un très long roman peut être manqué.
-
-### Génération par gabarit plutôt qu'un modèle de langue (summary)
-
-Le « résumé » est une **génération par gabarit (template NLG)** : des phrases à trous remplies avec le titre, l'auteur, les personnages, le lieu principal et l'arc thématique chapitre par chapitre. Avantages : exécution en millisecondes, zéro hallucination, sortie 100 % traçable. Limite assumée : le texte est formulaïque — c'est une fiche de lecture, pas une prose originale.
-
-### Similarité : cosinus + bonus de catégorie (similar)
-
-La similarité lexicale pure (cosinus sur TF-IDF) rapproche parfois deux livres pour de mauvaises raisons (vocabulaire d'époque commun). Un **bonus fixe de +0,15** est ajouté quand les deux livres partagent la même catégorie éditoriale dans le catalogue. Les 21 livres du corpus sont téléchargés en concurrence (asyncio, 4 simultanés) uniquement lors du premier `--similar`.
-
-### Import dynamique dans le CLI
-
-`bookworm.py` résout le module à exécuter par `__import__` à partir d'une simple table nom → module. Conséquences : le CLI ne charge **que** le module demandé (lancer `--lexdiv` n'importe jamais spaCy NER), et l'ajout d'une analyse ne demande qu'une ligne dans `TASK_MODULES` plus une option argparse.
+Les arbitrages techniques ont été extraits dans un document dédié : [`DESIGN_CHOICES.md`](DESIGN_CHOICES.md).

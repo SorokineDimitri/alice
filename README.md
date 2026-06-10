@@ -58,7 +58,7 @@ $ python3 bookworm.py --lexdiv 11
 {
   "tok": 25412,        // nombre total de mots (tokens)
   "typ": 2548,         // nombre de mots uniques (types)
-  "hap": 1104,         // hapax : mots utilisés une seule fois
+  "hap": 1104,         // mots utilisés une seule fois
   "ttr": 0.1002,       // type-token ratio (richesse du vocabulaire)
   "mwl": 4.13,         // longueur moyenne d'un mot
   "mwf": 9.97          // fréquence moyenne d'un mot
@@ -102,51 +102,80 @@ $ python3 bookworm.py --similar 11
 
 ## Architecture
 
-Le projet est organisé en **trois couches** qui communiquent exclusivement via des fonctions `run(book_id)` et un cache JSON partagé :
+Le projet suit un pipeline simple : une commande CLI reçoit un identifiant Project Gutenberg, récupère le texte si nécessaire, lance une ou plusieurs analyses, puis sauvegarde le résultat dans le cache JSON.
 
-```mermaid
-flowchart TB
-    CLI["bookworm.py<br/>(CLI argparse)"]
+### Flux général
 
-    subgraph ACQ["🌐 Couche acquisition"]
-        GUT["gutenberg.py<br/>téléchargement HTTP"]
-        PC["utils/path_config.py<br/>get_text / get_raw_text"]
-        CLEANER["cleaner.py<br/>retrait en-têtes Gutenberg<br/>+ table des matières"]
-    end
-
-    subgraph ANALYSE["🔬 Couche analyse"]
-        LEX["lexdiv.py<br/>métriques lexicales"]
-        TOP["topics.py<br/>thèmes par TF-IDF"]
-        ENT["entities.py<br/>NER personnages/lieux"]
-        SIM["similarity.py<br/>similarité cosinus"]
-    end
-
-    subgraph SYNTH["📝 Couche synthèse"]
-        META["utils/metadata.py<br/>titre / auteur / rayons"]
-        OVR["overview.py<br/>génération par gabarit"]
-        SUM["summary.py<br/>résumé + cache"]
-        CARD["card.py<br/>agrégation finale"]
-    end
-
-    NLP["nlp.py<br/>TF-IDF · spaCy · lemmatisation<br/>(boîte à outils partagée)"]
-    CACHE[("data/cache/*.json<br/>data/raw/*.txt")]
-
-    CLI --> LEX & TOP & ENT & SUM & SIM & CARD
-    PC --> GUT
-    PC --> CLEANER
-    LEX & TOP & ENT & SIM --> PC
-    LEX & TOP & SIM --> NLP
-    ENT --> NLP
-    META --> TOP
-    OVR --> ENT & TOP & META
-    SUM --> OVR
-    CARD --> META & LEX & TOP & ENT & SUM & SIM
-    LEX & TOP & ENT & SIM & SUM & CARD <--> CACHE
+```text
+bookworm.py --<task> ID -> module correspondant -> cache JSON existant ? -> retour cache ou calcul -> sauvegarde dans data/cache/
 ```
 
-**Lecture du graphe** : `--card` est le sommet de la pyramide — il appelle les 5 autres analyses, qui elles-mêmes s'appuient sur la boîte à outils `nlp.py` et la couche d'acquisition. Chaque module vérifie d'abord son cache avant de calculer.
+### Acquisition du texte
 
-➡️ L'architecture complète (diagrammes de séquence, algorithmes, choix de conception) est détaillée dans [`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md).
+```text
+book_id -> utils/path_config.py -> data/raw/ID.txt existe ? -> lecture du fichier brut
+book_id -> utils/path_config.py -> texte absent -> modules/gutenberg.py -> téléchargement Project Gutenberg -> data/raw/ID.txt
+texte brut -> modules/cleaner.py -> texte nettoyé -> modules d'analyse
+```
+
+Rôle des fichiers :
+
+- `modules/gutenberg.py` télécharge les fichiers `.txt` depuis Project Gutenberg.
+- `utils/path_config.py` centralise les chemins et l'accès au texte brut/nettoyé.
+- `modules/cleaner.py` retire les marqueurs Gutenberg et la table des matières quand elle est détectable.
+
+### Analyses indépendantes
+
+```text
+texte nettoyé -> modules/lexdiv.py -> métriques lexicales -> data/cache/ID_lexdiv.json
+texte nettoyé -> modules/topics.py -> lemmatisation spaCy -> TF-IDF par section -> thèmes -> data/cache/ID_topics.json
+texte nettoyé -> modules/entities.py -> NER spaCy + règles -> personnages/lieux -> data/cache/ID_entities.json
+texte nettoyé + catalogue -> modules/similarity.py -> TF-IDF + similarité cosinus + bonus catégorie -> data/cache/ID_similar.json
+```
+
+Rôle de `modules/nlp.py` :
+
+```text
+modules/nlp.py -> vectorize() pour TF-IDF -> lexdiv/topics/summary/similarity
+modules/nlp.py -> load_spacy() + lemmatize() -> topics/entities
+```
+
+### Métadonnées et résumé
+
+```text
+texte brut -> utils/metadata.py -> titre + auteur
+topics -> utils/metadata.py -> top thèmes -> bookshelves
+metadata + entities + topics -> modules/overview.py -> résumé par gabarit
+modules/summary.py -> overview.build() -> data/cache/ID_summary.json
+```
+
+Le résumé n'utilise pas de modèle génératif : il assemble une phrase de synthèse à partir des résultats déjà calculés.
+
+### Book card complète
+
+```text
+bookworm.py --card ID -> modules/card.py
+modules/card.py -> utils/metadata.py -> info
+modules/card.py -> modules/lexdiv.py -> lexdiv
+modules/card.py -> modules/topics.py -> topics
+modules/card.py -> modules/entities.py -> entities
+modules/card.py -> modules/summary.py -> summary
+modules/card.py -> modules/similarity.py -> similar
+modules/card.py -> data/cache/ID_card.json
+```
+
+`--card` est donc l'agrégateur final : il appelle les autres modules, réutilise leurs caches quand ils existent, puis produit une seule structure JSON complète.
+
+### Logique de cache
+
+```text
+run(book_id) -> cache data/cache/ID_task.json existe et valide ? -> retour immédiat
+run(book_id) -> cache absent ou périmé -> calcul -> save_json() -> retour résultat
+```
+
+Chaque module reste indépendant : il peut être appelé seul depuis la CLI ou indirectement par `--card`.
+
+➡️ L'architecture complète est détaillée dans [`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md), et les choix de conception dans [`documentation/DESIGN_CHOICES.md`](documentation/DESIGN_CHOICES.md).
 
 ## Installation
 
@@ -249,8 +278,6 @@ Trois garde-fous évitent de servir un résultat périmé ou corrompu :
 | **argparse** | Interface CLI | Bibliothèque standard, zéro dépendance |
 | **uv** | Gestion des dépendances | Lockfile reproductible, installation du modèle spaCy déclarative |
 
-**Parti pris fort** : aucun LLM, aucun appel API d'IA. Toutes les analyses sont fondées sur des statistiques (TF-IDF, comptages) et des règles linguistiques explicites — chaque résultat est **explicable et reproductible**.
-
 ## Tests
 
 ```bash
@@ -263,7 +290,8 @@ Vérifie le téléchargement (livre existant, second miroir, livre inexistant �
 
 | Document | Contenu |
 |---|---|
-| [`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md) | Pipeline complet, diagrammes de séquence, système de cache, choix de conception et compromis |
+| [`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md) | Pipeline complet, diagrammes de séquence, système de cache |
+| [`documentation/DESIGN_CHOICES.md`](documentation/DESIGN_CHOICES.md) | Choix de conception, alternatives testées, compromis techniques |
 | [`documentation/MODULES.md`](documentation/MODULES.md) | Référence module par module : rôle, API, algorithme, exemples |
 
 ## Auteurs
