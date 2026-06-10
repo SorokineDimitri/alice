@@ -7,7 +7,8 @@ from pathlib import Path
 
 from modules.cache import load_json, save_json
 from modules.nlp import load_spacy, spacy_chunks
-from utils.path_config import cache_path, get_text
+from utils import metadata
+from utils.path_config import cache_path, get_raw_text, get_text
 
 RULES_PATH = Path(__file__).resolve().parent.parent / "data" / "entity_rules.json"
 CONTEXT_WINDOW = 4
@@ -63,6 +64,36 @@ def generic_location_nouns() -> set[str]:
 
 def normalize_entity(name: str) -> str:
     return " ".join(name.split()).strip(".,;:!?\"'“”‘’")
+
+
+def comparable_name(name: str) -> str:
+    return " ".join(
+        token.lower()
+        for token in re_words(name)
+    )
+
+
+def title_character_match(title: str, character: str) -> bool:
+    title_key = comparable_name(title)
+    character_key = comparable_name(character)
+    return (
+        bool(title_key and character_key)
+        and (
+            character_key == title_key
+            or (
+                len(character_key.split()) >= 2
+                and character_key in title_key
+            )
+        )
+    )
+
+
+def re_words(name: str) -> list[str]:
+    return [
+        word
+        for word in name.replace("’", "'").replace("-", " ").split()
+        if any(char.isalpha() for char in word)
+    ]
 
 
 def valid_entity_name(name: str) -> bool:
@@ -302,7 +333,18 @@ def entity_text_sample(text: str) -> str:
     )
 
 
-def find_entities(text: str) -> dict[str, list[str]]:
+def promote_title_character(book_id: int, characters: list[str]) -> list[str]:
+    title = metadata.find_title(get_raw_text(book_id))
+    if not title:
+        return characters
+
+    for index, character in enumerate(characters):
+        if title_character_match(title, character):
+            return [character] + characters[:index] + characters[index + 1:]
+    return characters
+
+
+def find_entities(text: str, book_id: int | None = None) -> dict[str, list[str]]:
     nlp = load_spacy()
     docs = list(nlp.pipe(spacy_chunks(entity_text_sample(text))))
     character_names, location_nouns = learn_book_entities(docs)
@@ -327,6 +369,8 @@ def find_entities(text: str) -> dict[str, list[str]]:
     ]
     character_names = set(ranked_characters)
     characters = ranked_characters[:ENTITY_LIMIT]
+    if book_id is not None:
+        characters = promote_title_character(book_id, characters)
     locations = [
         name for name, _ in counters["locations"].most_common()
         if name not in character_names
@@ -355,6 +399,7 @@ def cache_is_current(path) -> bool:
     return path.stat().st_mtime >= max(
         Path(__file__).stat().st_mtime,
         RULES_PATH.stat().st_mtime,
+        Path(metadata.__file__).stat().st_mtime,
     )
 
 
@@ -365,6 +410,6 @@ def run(book_id):
     if cached is not None and cache_is_current(path) and valid_cached_entities(cached):
         return cached
 
-    result = find_entities(get_text(book_id))
+    result = find_entities(get_text(book_id), book_id)
     save_json(path, result)
     return result
