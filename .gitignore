@@ -1,0 +1,11 @@
+__pycache__/
+modules/__pycache__/
+*.py[cod]
+.DS_Store
+*/.DS_Store
+.venv/
+data/raw/*
+!data/raw/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+docs/
