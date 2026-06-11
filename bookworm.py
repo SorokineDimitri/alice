@@ -32,6 +32,8 @@ def main():
                          help="5 livres similaires (ordre decroissant)")
     options.add_argument("--card", type=int, metavar="ID",
                          help="Book card complete agregant tout le reste")
+    parser.add_argument("--force", action="store_true",
+                        help="Regenerer le cache JSON au lieu de le reutiliser")
 
     args = parser.parse_args()
 
@@ -58,7 +60,7 @@ def run_task(args):
             try:
                 if task == "similar" and hasattr(module, "prepare"):
                     module.prepare(book_id)
-                return module.run(book_id)
+                return module.run(book_id, force=args.force)
             except AttributeError:
                 raise RuntimeError(f"--{task} is not implemented yet.")
     raise RuntimeError("No task selected.")

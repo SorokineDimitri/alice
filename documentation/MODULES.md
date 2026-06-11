@@ -216,7 +216,7 @@ Le **lieu principal** est choisi intelligemment : un lieu qui apparaît dans le 
 
 **API.** `run(book_id) -> str` — cache : `<id>_summary.json`.
 
-**Particularité.** Son `cache_is_current` surveille les `mtime` de **six fichiers** (`summary.py`, `overview.py`, `metadata.py`, `entities.py`, `lexdiv.py`, `topics.py`) : le résumé étant une synthèse, il doit être régénéré dès qu'une de ses sources évolue.
+**Particularité.** Le résumé est cache-first comme les autres modules. Si une de ses sources évolue (`overview.py`, `metadata.py`, `entities.py`, `topics.py`…), on le régénère explicitement avec `--force`.
 
 ---
 
@@ -239,4 +239,4 @@ Le **lieu principal** est choisi intelligemment : un lieu qui apparaît dans le 
 }
 ```
 
-**Fonctionnement.** `build_card` appelle simplement `metadata.info`, `lexdiv.run`, `topics.run`, `entities.run`, `summary.run` et `similarity.prepare + run`. Comme chaque sous-module est cache-first, la card ne recalcule jamais rien d'inutile : sur cache chaud, elle se résume à six lectures JSON. Sa validation de cache (`valid_cached_card`) vérifie le schéma complet, et son invalidation surveille les six modules sources — la card est toujours cohérente avec le code courant.
+**Fonctionnement.** `build_card` appelle simplement `metadata.info`, `lexdiv.run`, `topics.run`, `entities.run`, `summary.run` et `similarity.prepare + run`. Comme chaque sous-module est cache-first, la card ne recalcule jamais rien d'inutile : sur cache chaud, elle se résume à six lectures JSON. Sa validation de cache (`valid_cached_card`) vérifie le schéma complet. Avec `--card ID --force`, le flag est propagé aux sous-modules pour reconstruire la card et ses dépendances.

@@ -29,19 +29,19 @@ def genre(meta: dict) -> str:
     return ""
 
 
-def section_themes(book_id: int) -> list[str]:
+def section_themes(book_id: int, force: bool = False) -> list[str]:
     """Themes section par section, DANS L'ORDRE (avec doublons)."""
     return [
         key.split(": ", 1)[1].strip()
-        for key in topics.run(book_id)
+        for key in topics.run(book_id, force=force)
         if ": " in key
     ]
 
 
-def book_themes(book_id: int) -> list[str]:
+def book_themes(book_id: int, force: bool = False) -> list[str]:
     """Themes uniques du livre (sans doublons, ordre d'apparition)."""
     result = []
-    for theme in section_themes(book_id):
+    for theme in section_themes(book_id, force=force):
         if theme and theme not in result:
             result.append(theme)
     return result
@@ -103,8 +103,8 @@ def themes_sentence(meta: dict, themes: list[str]) -> str:
     )
 
 
-def arc_sentence(book_id: int) -> str:
-    arc = section_themes(book_id)
+def arc_sentence(book_id: int, force: bool = False) -> str:
+    arc = section_themes(book_id, force=force)
     if len(arc) >= 2 and arc[0] != arc[-1]:
         return f"Across its {len(arc)} chapters, the story moves from {arc[0]} toward {arc[-1]}."
     if arc:
@@ -112,21 +112,21 @@ def arc_sentence(book_id: int) -> str:
     return ""
 
 
-def build(book_id: int) -> str:
-    meta = metadata.info(book_id)
-    ent = entities.run(book_id)
+def build(book_id: int, force: bool = False) -> str:
+    meta = metadata.info(book_id, force=force)
+    ent = entities.run(book_id, force=force)
     characters = ent.get("characters", [])
     locations = ent.get("locations", [])
-    themes = book_themes(book_id)
+    themes = book_themes(book_id, force=force)
     place = main_place(meta["title"], locations)
 
     sentences = [
         opening_sentence(meta, characters, place, themes),
         themes_sentence(meta, themes),
-        arc_sentence(book_id),
+        arc_sentence(book_id, force=force),
     ]
     return " ".join(sentence for sentence in sentences if sentence)
 
 
-def run(book_id: int) -> str:
-    return build(book_id)
+def run(book_id: int, force: bool = False) -> str:
+    return build(book_id, force=force)

@@ -34,10 +34,10 @@ def _compute_metrics(text: str) -> dict[str, float | int]:
     }
 
 
-def run(book_id: int) -> dict[str, float | int]:
+def run(book_id: int, force: bool = False) -> dict[str, float | int]:
     path = cache_path(book_id, "lexdiv")
     cached = load_json(path, REQUIRED_KEYS)
-    if cached is not None:
+    if not force and cached is not None:
         return cached
 
     text = get_text(book_id)

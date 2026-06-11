@@ -135,17 +135,10 @@ def valid_cached_similarity(payload: Any) -> bool:
     )
 
 
-def cache_is_current(path: Path) -> bool:
-    return path.stat().st_mtime >= max(
-        Path(__file__).stat().st_mtime,
-        BOOK_LIST_PATH.stat().st_mtime,
-    )
-
-
-def run(book_id: int) -> list[str]:
+def run(book_id: int, force: bool = False) -> list[str]:
     path = cache_path(book_id, "similar")
     cached = load_json(path)
-    if cached is not None and cache_is_current(path) and valid_cached_similarity(cached):
+    if not force and cached is not None and valid_cached_similarity(cached):
         return cached[SIMILAR_CACHE_KEY]
 
     texts = available_texts(corpus_book_ids(book_id))

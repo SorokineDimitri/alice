@@ -395,19 +395,11 @@ def valid_cached_entities(payload) -> bool:
     )
 
 
-def cache_is_current(path) -> bool:
-    return path.stat().st_mtime >= max(
-        Path(__file__).stat().st_mtime,
-        RULES_PATH.stat().st_mtime,
-        Path(metadata.__file__).stat().st_mtime,
-    )
-
-
-def run(book_id):
+def run(book_id, force: bool = False):
     path = cache_path(book_id, "entities")
 
     cached = load_json(path)
-    if cached is not None and cache_is_current(path) and valid_cached_entities(cached):
+    if not force and cached is not None and valid_cached_entities(cached):
         return cached
 
     result = find_entities(get_text(book_id), book_id)

@@ -183,37 +183,31 @@ flowchart TD
     B -- non --> CALC
     B -- oui --> C{"JSON bien formé<br/>et schéma valide ?"}
     C -- non --> CALC
-    C -- oui --> D{"Cache plus récent que<br/>le code du module et<br/>ses fichiers de données ?"}
-    D -- non --> CALC
-    D -- oui --> OK["✅ Servir le cache"]
+    C -- oui --> D{"--force activé ?"}
+    D -- oui --> CALC
+    D -- non --> OK["✅ Servir le cache"]
     CALC["Recalculer"] --> SAVE["save_json()"] --> RET["Retourner le résultat"]
 ```
 
-### Les trois garde-fous
+### Les trois règles
 
 1. **Validation de schéma** — `cache.load_json()` rejette tout JSON mal formé ; chaque module ajoute sa propre validation structurelle (`valid_cached_topics`, `valid_cached_entities`, `valid_cached_card`…). Un cache écrit par une ancienne version du code, ou corrompu, est silencieusement recalculé.
 
-2. **Invalidation par `mtime`** — la fonction `cache_is_current()` de chaque module compare la date du cache à celle **du code et des fichiers de données dont le résultat dépend**. Exemple pour `card.py` : le cache de la card est invalidé si *n'importe lequel* des 6 modules sous-jacents a été modifié depuis. C'est un mécanisme du type *Makefile* : modifier `topics.py` régénère automatiquement les topics, les résumés et les cards au prochain appel, sans rien supprimer à la main.
+2. **Recalcul explicite par `--force`** — modifier le code ou un fichier de données ne déclenche plus automatiquement une invalidation par date. Si l'on veut recalculer un résultat, on lance la commande avec `--force`.
 
 3. **Granularité par tâche** — un fichier par couple (livre, analyse). Invalider les topics ne touche pas aux entités déjà calculées.
 
-### Chaîne d'invalidation
+### Régénération contrôlée
 
 ```mermaid
-flowchart BT
-    THEMES[/"literary_themes.json"/] --> TOPC[("11_topics.json")]
-    TOPPY["topics.py"] --> TOPC
-    RULES[/"entity_rules.json"/] --> ENTC[("11_entities.json")]
-    ENTPY["entities.py"] --> ENTC
-    METAPY["metadata.py"] --> ENTC
-    BOOKS[/"similar_books.json"/] --> SIMC[("11_similar.json")]
-    SIMPY["similarity.py"] --> SIMC
-    TOPC & ENTC --> SUMC[("11_summary.json")]
-    OVRPY["overview.py"] --> SUMC
-    SUMC & TOPC & ENTC & SIMC & LEXC[("11_lexdiv.json")] --> CARDC[("11_card.json")]
+flowchart LR
+    CMD["python3 bookworm.py --topics 11 --force"] --> RUN["topics.run(11, force=True)"]
+    RUN --> SKIP["Ignore 11_topics.json"]
+    SKIP --> CALC["Recalcule les topics"]
+    CALC --> SAVE["Réécrit data/cache/11_topics.json"]
 ```
 
-*Lire de bas en haut : si un nœud source change, tous les caches au-dessus sont régénérés au prochain appel.*
+Pour `--card --force`, le flag est propagé aux sous-modules (`lexdiv`, `topics`, `entities`, `summary`, `similar`) afin de reconstruire toute la card à partir de résultats frais.
 
 ## 7. Les fichiers de données
 
@@ -225,7 +219,7 @@ Le comportement linguistique du moteur est **externalisé dans trois fichiers JS
 | `data/entity_rules.json` | 3 listes (320 entrées) | Règles linguistiques pour la détection de lieux : prépositions locatives (`in`, `at`, `near`…), noms génériques de lieux (`castle`, `garden`…), faux positifs à exclure (`voice`, `heart`…). | `entities.py` |
 | `data/similar_books.json` | 21 livres | Corpus de référence pour `--similar` : id Gutenberg, titre, catégorie (3 catégories : jeunesse, policier, SF/fantasy). | `similarity.py` |
 
-Tous trois sont chargés une seule fois par processus via `functools.lru_cache`, et leur `mtime` participe à l'invalidation du cache (modifier le dictionnaire de thèmes recalcule les topics).
+Tous trois sont chargés une seule fois par processus via `functools.lru_cache`. Après modification d'un de ces fichiers, il faut relancer la commande avec `--force` pour régénérer le cache correspondant.
 
 ## 8. Choix de conception et compromis
 

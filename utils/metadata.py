@@ -85,22 +85,22 @@ def find_title(text: str) -> str:
     return " ".join(title_lines)
 
 
-def bookshelves_from_topics(book_id: int) -> str:
-    counts = Counter(topics.topic_themes(book_id))
+def bookshelves_from_topics(book_id: int, force: bool = False) -> str:
+    counts = Counter(topics.topic_themes(book_id, force=force))
     return "; ".join(
         theme for theme, _ in counts.most_common(BOOKSHELF_LIMIT)
     )
 
 
-def info(book_id: int) -> dict[str, str]:
+def info(book_id: int, force: bool = False) -> dict[str, str]:
     text = get_raw_text(book_id)
     return {
         "id": str(book_id),
         "title": find_title(text),
         "authors": find_author(text),
-        "bookshelves": bookshelves_from_topics(book_id),
+        "bookshelves": bookshelves_from_topics(book_id, force=force),
     }
 
 
-def run(book_id: int) -> dict[str, str]:
-    return info(book_id)
+def run(book_id: int, force: bool = False) -> dict[str, str]:
+    return info(book_id, force=force)

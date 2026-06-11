@@ -178,19 +178,12 @@ def valid_cached_topics(payload) -> bool:
     )
 
 
-def cache_is_current(path) -> bool:
-    return path.stat().st_mtime >= max(
-        Path(__file__).stat().st_mtime,
-        THEMES_PATH.stat().st_mtime,
-    )
-
-
-def run(book_id):
+def run(book_id, force: bool = False):
     """Point d'entree : renvoie les themes du livre (depuis le cache si possible)."""
     path = cache_path(book_id, "topics")
 
     cached = load_json(path)
-    if cached is not None and cache_is_current(path) and valid_cached_topics(cached):
+    if not force and cached is not None and valid_cached_topics(cached):
         return cached
 
     text = get_text(book_id)
@@ -199,9 +192,9 @@ def run(book_id):
     return result
 
 
-def topic_themes(book_id: int) -> list[str]:
+def topic_themes(book_id: int, force: bool = False) -> list[str]:
     return [
         theme
-        for theme in (theme_from_key(key) for key in run(book_id))
+        for theme in (theme_from_key(key) for key in run(book_id, force=force))
         if theme
     ]

@@ -107,7 +107,8 @@ Le projet suit un pipeline simple : une commande CLI reçoit un identifiant Proj
 ### Flux général
 
 ```text
-bookworm.py --<task> ID -> module correspondant -> cache JSON existant ? -> retour cache ou calcul -> sauvegarde dans data/cache/
+bookworm.py --<task> ID -> module correspondant -> cache JSON valide ? -> retour cache ou calcul -> sauvegarde dans data/cache/
+bookworm.py --<task> ID --force -> ignorer le cache JSON -> recalcul -> sauvegarde dans data/cache/
 ```
 
 ### Acquisition du texte
@@ -170,7 +171,7 @@ modules/card.py -> data/cache/ID_card.json
 
 ```text
 run(book_id) -> cache data/cache/ID_task.json existe et valide ? -> retour immédiat
-run(book_id) -> cache absent ou périmé -> calcul -> save_json() -> retour résultat
+run(book_id) -> cache absent, invalide ou --force -> calcul -> save_json() -> retour résultat
 ```
 
 Chaque module reste indépendant : il peut être appelé seul depuis la CLI ou indirectement par `--card`.
@@ -204,6 +205,7 @@ pip install -r requirements.txt
 python3 bookworm.py --card 11        # book card complète d'Alice au pays des merveilles
 python3 bookworm.py --lexdiv 84      # diversité lexicale de Frankenstein
 python3 bookworm.py --topics 1184    # thèmes du Comte de Monte-Cristo
+python3 bookworm.py --topics 1184 --force  # recalcule et réécrit le cache JSON
 python3 bookworm.py --help           # aide complète
 ```
 
@@ -211,6 +213,7 @@ Les options sont **mutuellement exclusives** : une commande = une analyse. L'`ID
 
 - **Premier lancement** : le texte est téléchargé puis analysé (l'analyse spaCy peut prendre quelques dizaines de secondes sur un gros livre).
 - **Lancements suivants** : la réponse est instantanée grâce au [cache](#système-de-cache).
+- **Recalcul volontaire** : ajouter `--force` ignore le JSON existant et réécrit le cache de la commande.
 
 ## Structure du projet
 
@@ -250,9 +253,9 @@ Le cache fonctionne sur **deux niveaux** et rend toute analyse répétée instan
 
 ```mermaid
 flowchart LR
-    A["run(book_id)"] --> B{"Cache JSON<br/>valide et à jour ?"}
+    A["run(book_id)"] --> B{"Cache JSON<br/>valide ?"}
     B -- oui --> C["✅ Retour immédiat"]
-    B -- non --> D{"Texte brut<br/>sur disque ?"}
+    B -- non<br/>ou --force --> D{"Texte brut<br/>sur disque ?"}
     D -- non --> E["Téléchargement<br/>Gutenberg"]
     E --> F["data/raw/ID.txt"]
     D -- oui --> F
@@ -261,10 +264,10 @@ flowchart LR
     H --> C
 ```
 
-Trois garde-fous évitent de servir un résultat périmé ou corrompu :
+Trois règles gardent le cache simple et contrôlable :
 
 1. **Validation de schéma** — chaque module vérifie la structure du JSON (clés requises, types) avant de le servir ;
-2. **Invalidation par date** — si le code du module (ou un fichier de données dont il dépend) est plus récent que le cache, l'analyse est recalculée ;
+2. **Recalcul explicite** — `--force` ignore le cache existant et force la régénération du résultat ;
 3. **Écriture atomique par tâche** — un fichier par couple `(livre, tâche)` : `11_topics.json`, `11_entities.json`…
 
 ## Stack technique
