@@ -254,11 +254,11 @@ Le cache fonctionne sur **deux niveaux** et rend toute analyse répétée instan
 ```mermaid
 flowchart LR
     A["run(book_id)"] --> B{"Cache JSON<br/>valide ?"}
-    B -- oui --> C["✅ Retour immédiat"]
-    B -- non<br/>ou --force --> D{"Texte brut<br/>sur disque ?"}
-    D -- non --> E["Téléchargement<br/>Gutenberg"]
+    B -->|oui| C["✅ Retour immédiat"]
+    B -->|non ou force| D{"Texte brut<br/>sur disque ?"}
+    D -->|non| E["Téléchargement<br/>Gutenberg"]
     E --> F["data/raw/ID.txt"]
-    D -- oui --> F
+    D -->|oui| F
     F --> G["Nettoyage + Analyse NLP"]
     G --> H["data/cache/ID_tâche.json"]
     H --> C
